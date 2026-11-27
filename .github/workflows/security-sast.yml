@@ -1,0 +1,53 @@
+# Ba3tration-tester, code engine (SAST): Semgrep with the SemSec rules and Semgrep's
+# OWASP Top 10 pack, on the source of your app. On demand, or called by ba3tration.yml.
+# Findings never reach the job log: they are encrypted with results_public.pem like the
+# testers' reports. Read them with: bash scripts/collect.sh <run id>
+name: Security scan (SAST · Semgrep + SemSec)
+
+on:
+  workflow_dispatch:
+    inputs:
+      code_repo:
+        description: owner/name of the repo that holds the source code to scan (empty = this repo). Private repo, add a read-only SOURCE_REPO_TOKEN secret
+        default: ""
+      ref:
+        description: Branch, tag or full SHA to scan (empty = default branch)
+        default: ""
+      code_dir:
+        description: Folder to scan inside that repo
+        default: "."
+  workflow_call:
+    inputs:
+      code_repo: { type: string, default: "" }
+      ref: { type: string, default: "" }
+      code_dir: { type: string, default: "." }
+
+permissions:
+  contents: read
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check setup
+        run: |
+          test -s results_public.pem || { echo "::error::results_public.pem is missing: run ./setup.sh first"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.code_repo || github.repository }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}   # the secret only for a private app repo
+          path: code
+          persist-credentials: false
+      - name: Code scan (Semgrep + SemSec)
+        env:
+          TARGET: code/${{ inputs.code_dir }}
+        run: bash scripts/security/semgrep_scan.sh
+      - name: Encrypt results
+        if: always()
+        run: bash scripts/encrypt_results.sh security-sast
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: results-security-sast, path: results.enc/, retention-days: 14 }

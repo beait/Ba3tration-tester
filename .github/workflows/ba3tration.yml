@@ -1,0 +1,80 @@
+# Ba3tration-tester: one button for the three engines, one run to collect.
+#   functional  AI testers on emulators and simulators        (agent-testers.yml)
+#   sast        Semgrep + SemSec on the source code           (security-sast.yml)
+#   dast        OWASP ZAP on your own staging, after it proves it authorizes this repo (security-dast.yml)
+# Everything readable is encrypted with results_public.pem. On your machine:
+#   bash scripts/collect.sh <run id>    ->  runs/<id>/SUMMARY.md and runs/<id>/BA3TRATION-REPORT.md
+# Each engine can also run alone from its own workflow, with all its options.
+name: Ba3tration-tester
+
+on:
+  workflow_dispatch:
+    inputs:
+      engines:
+        description: "Which engines: all, security (sast + dast), functional, sast or dast"
+        type: choice
+        options: [all, security, functional, sast, dast]
+        default: all
+      android_personas:
+        description: "Functional: Android personas from personas.json (comma-separated, all, or none)"
+        default: "anna,malik"
+      ios_personas:
+        description: "Functional: iOS personas from personas.json (comma-separated, all, or none)"
+        default: "clara,jonas"
+      brief:
+        description: "Functional: agent brief file"
+        default: AGENT_BRIEF.md
+      model:
+        description: "Functional: sonnet, opus, haiku (cheapest) or a full Claude id"
+        default: sonnet
+      code_repo:
+        description: "SAST: owner/name of the repo with the source code (empty = this repo). Private repo, add a SOURCE_REPO_TOKEN secret"
+        default: ""
+      code_ref:
+        description: "SAST: branch, tag or full SHA (empty = default branch)"
+        default: ""
+      code_dir:
+        description: "SAST: folder to scan inside that repo"
+        default: "."
+      dast_scan:
+        description: "DAST: baseline = passive, no attack. full = active scan that attacks YOUR OWN staging"
+        type: choice
+        options: [baseline, full]
+        default: baseline
+      i_am_authorized:
+        description: "DAST: type yes to confirm that you own the target and may test it (needed for a full scan)"
+        default: "no"
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+jobs:
+  functional:
+    if: contains(fromJSON('["all", "functional"]'), inputs.engines)
+    uses: ./.github/workflows/agent-testers.yml
+    with:
+      android_personas: ${{ inputs.android_personas }}
+      ios_personas: ${{ inputs.ios_personas }}
+      brief: ${{ inputs.brief }}
+      model: ${{ inputs.model }}
+    secrets: inherit
+
+  sast:
+    if: contains(fromJSON('["all", "security", "sast"]'), inputs.engines)
+    uses: ./.github/workflows/security-sast.yml
+    with:
+      code_repo: ${{ inputs.code_repo }}
+      ref: ${{ inputs.code_ref }}
+      code_dir: ${{ inputs.code_dir }}
+    secrets: inherit
+
+  dast:
+    if: contains(fromJSON('["all", "security", "dast"]'), inputs.engines)
+    uses: ./.github/workflows/security-dast.yml
+    with:
+      scan_type: ${{ inputs.dast_scan }}
+      i_am_authorized: ${{ inputs.i_am_authorized }}
+      skip_if_unconfigured: ${{ inputs.engines == 'all' || inputs.engines == 'security' }}
+    secrets: inherit

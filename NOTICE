@@ -1,0 +1,19 @@
+mobile-agent-testers
+Copyright (c) 2026 Pierre Raffalli
+https://github.com/pierridotite/mobile-agent-testers
+
+Released under the MIT license (see LICENSE). If you copy or redistribute the
+code, keep the copyright notice and the license text.
+
+If you use it in a product, a paper or a talk, a link to the repository is
+appreciated. CITATION.cff gives the reference.
+
+
+Ba3tration-tester
+https://github.com/beait/Ba3tration-tester
+
+Built on mobile-agent-testers (above), whose README is kept as TESTERS.md. It adds
+two security engines, one workflow that runs the three engines, and one report.
+At run time the security engines fetch the SemSec rules
+(https://github.com/RobustaStudio/semsec, MIT license) and run Semgrep and OWASP ZAP
+from their official container images. None of them is copied into this repository.

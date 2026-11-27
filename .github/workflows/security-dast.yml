@@ -1,0 +1,73 @@
+# Ba3tration-tester, live engine (DAST): OWASP ZAP against your own staging site.
+# On demand, or called by ba3tration.yml. It scans nothing until the target proves that
+# it authorizes THIS repository (scripts/security/verify_target.sh, docs/security-scan.md):
+#   secret  STAGING_URL   the origin of your staging site, like https://staging.example.com
+#   on it   /.well-known/ba3tration.txt   with the line   ba3tration-site-verification=<owner>/<repo>
+# baseline = passive, no attack. full = active scan: attack traffic, test environments only,
+# and it can leave junk data behind (forms it submits). ZAP is not signed in: it sees what
+# an anonymous visitor sees. Findings are encrypted like the testers' reports.
+name: Security scan (DAST · OWASP ZAP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: baseline = passive, no attack. full = active scan that attacks YOUR OWN staging
+        type: choice
+        options: [baseline, full]
+        default: baseline
+      i_am_authorized:
+        description: Type yes to confirm that you own the target and may test it (needed for a full scan)
+        default: "no"
+  workflow_call:
+    inputs:
+      scan_type: { type: string, default: baseline }
+      i_am_authorized: { type: string, default: "no" }
+      skip_if_unconfigured: { type: boolean, default: false }   # no STAGING_URL secret = a warning, not a failure
+
+permissions:
+  contents: read
+
+jobs:
+  dast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check setup
+        run: |
+          test -s results_public.pem || { echo "::error::results_public.pem is missing: run ./setup.sh first"; exit 1; }
+      - name: Is a target configured?
+        id: cfg
+        env:
+          URL: ${{ secrets.STAGING_URL }}
+          SOFT: ${{ inputs.skip_if_unconfigured }}
+        run: |
+          if [ -n "$URL" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$SOFT" = true ]; then
+            echo "::warning::Live scan skipped: no STAGING_URL secret (docs/security-scan.md)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::STAGING_URL secret is not set (docs/security-scan.md)"; exit 1
+          fi
+      - name: Ownership and authorization gate
+        if: steps.cfg.outputs.run == 'true'
+        env:
+          URL: ${{ secrets.STAGING_URL }}
+          REPO: ${{ github.repository }}
+          SCAN_TYPE: ${{ inputs.scan_type }}
+          AUTHORIZED: ${{ inputs.i_am_authorized }}
+          ALLOW_ANY_HOST: ${{ vars.BA3TRATION_ALLOW_ANY_HOST }}
+        run: bash scripts/security/verify_target.sh
+      - name: OWASP ZAP scan
+        if: steps.cfg.outputs.run == 'true'
+        env:
+          URL: ${{ secrets.STAGING_URL }}
+          SCAN_TYPE: ${{ inputs.scan_type }}
+        run: bash scripts/security/zap_scan.sh
+      - name: Encrypt results
+        if: always() && steps.cfg.outputs.run == 'true'
+        run: bash scripts/encrypt_results.sh security-dast
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.cfg.outputs.run == 'true'
+        with: { name: results-security-dast, path: results.enc/, retention-days: 14 }

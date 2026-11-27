@@ -1,0 +1,14 @@
+{
+  "name": "ba3tration-tester",
+  "description": "Set up, run and read Ba3tration-tester: AI testers on phones, a code scan (Semgrep + SemSec) and a live scan of your own staging (OWASP ZAP), on GitHub Actions",
+  "owner": {
+    "name": "beait"
+  },
+  "plugins": [
+    {
+      "name": "ba3tration-tester",
+      "source": "./plugins/ba3tration-tester",
+      "description": "Set up, run and read Ba3tration-tester: AI testers on phones, a code scan (Semgrep + SemSec) and a live scan of your own staging (OWASP ZAP), on GitHub Actions"
+    }
+  ]
+}

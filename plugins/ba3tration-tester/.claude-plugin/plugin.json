@@ -1,0 +1,26 @@
+{
+  "name": "ba3tration-tester",
+  "displayName": "Ba3tration-tester",
+  "description": "Set up, run and read Ba3tration-tester: AI testers on phones, a code scan (Semgrep + SemSec) and a live scan of your own staging (OWASP ZAP), on GitHub Actions",
+  "version": "0.1.0",
+  "author": {
+    "name": "beait",
+    "url": "https://github.com/beait"
+  },
+  "homepage": "https://github.com/beait/Ba3tration-tester",
+  "license": "MIT",
+  "keywords": [
+    "mobile",
+    "testing",
+    "security",
+    "owasp",
+    "sast",
+    "dast",
+    "qa",
+    "agents",
+    "github-actions"
+  ],
+  "repository": "https://github.com/beait/Ba3tration-tester",
+  "supportUrl": "https://github.com/beait/Ba3tration-tester/issues",
+  "privacyPolicyUrl": "https://github.com/beait/Ba3tration-tester/blob/main/PRIVACY.md"
+}
