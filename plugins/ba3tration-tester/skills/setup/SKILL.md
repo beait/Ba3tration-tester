@@ -123,7 +123,7 @@ bash scripts/collect.sh <run id>      # downloads and decrypts into runs/<id>/
 Then read, in `runs/<id>/`:
 
 - `BA3TRATION-REPORT.md`: security findings by OWASP Top 10:2025 category, most severe first,
-  then the testers' summary.
+  then the testers' summary. `BA3TRATION-REPORT.txt` is the same as plain text, for the user to open or send.
 - `SUMMARY.md`: the testers' findings, grouped, with how many personas hit each one.
 
 Before you report anything as true:

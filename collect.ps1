@@ -26,7 +26,11 @@ if ($code -ne 0) { exit $code }
 
 $dir = if ($Out -ne "") { $Out } else { Join-Path "runs" $RunId }
 Write-Host ""
-Write-Host "Read the reports as UTF-8 (Windows PowerShell shows Arabic as symbols otherwise):"
-foreach ($name in @("SUMMARY.md", "BA3TRATION-REPORT.md")) {
-  if (Test-Path (Join-Path $PSScriptRoot (Join-Path $dir $name))) { Write-Host "  Get-Content $(Join-Path $dir $name) -Encoding UTF8" }
+$text = Join-Path $dir "BA3TRATION-REPORT.txt"
+if (Test-Path (Join-Path $PSScriptRoot $text)) {
+  Write-Host "The report as a text file: $text"
+  Write-Host "  notepad $text"
+} elseif (Test-Path (Join-Path $PSScriptRoot (Join-Path $dir "SUMMARY.md"))) {
+  Write-Host "The summary (read it as UTF-8, or Windows PowerShell shows Arabic as symbols):"
+  Write-Host "  Get-Content $(Join-Path $dir "SUMMARY.md") -Encoding UTF8"
 }

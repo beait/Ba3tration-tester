@@ -105,6 +105,24 @@ class Report(unittest.TestCase):
         self.assertLess(text.index("Cross Site Scripting"), text.index("sql-injection"))
         self.assertLess(text.index("| عالية | 2 |"), text.index("| متوسطة | 2 |"))
 
+    def test_the_report_also_comes_as_a_text_file(self):
+        self.write("security-sast/results/sast/sast.json", SAST)
+        self.write("noah/results/noah/findings.json", {"issues": []})
+        self.write("SUMMARY.md", "## Seen\n\n![Settings](noah/shot.png) and [the run](https://example.com/run)\n")
+        self.assertEqual(report.main(["--run", str(self.tmp)]), 0)
+        raw = (self.tmp / "BA3TRATION-REPORT.txt").read_bytes()
+        # the mark that makes Notepad and Windows PowerShell read Arabic as Arabic, and Windows line ends
+        self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
+        self.assertIn(b"\r\n", raw)
+        text = raw.decode("utf-8-sig").replace("\r\n", "\n")
+        self.assertIn("Ba3tration-tester — التقرير الموحّد\n====", text)
+        self.assertIn("  عالية: 1\n", text)
+        self.assertIn("A05:2025 — Injection (1)\n", text)
+        self.assertIn("/src/api/users.js:42", text)
+        self.assertIn("Settings (noah/shot.png) and the run (https://example.com/run)", text)
+        for mark in ("**", "`", "|", "#", "!["):
+            self.assertNotIn(mark, text)
+
     def test_no_security_result_no_report(self):
         self.write("SUMMARY.md", "nothing\n")
         self.assertEqual(report.main(["--run", str(self.tmp)]), 0)

@@ -36,6 +36,7 @@ On Windows, in PowerShell: `.\collect.ps1 <run id>` (a plain `bash` there is oft
 
 - `SUMMARY.md`: what the testers found, grouped, with screenshots next to it.
 - `BA3TRATION-REPORT.md`: security findings under their OWASP Top 10:2025 category, most severe first, then the testers' summary.
+- `BA3TRATION-REPORT.txt`: the same report as plain text, for Notepad, an email or a ticket.
 
 Point it at your own app with the inputs of each workflow: the testers' options are in [TESTERS.md](TESTERS.md) and [docs/configuration.md](docs/configuration.md), the security engines in [docs/security-scan.md](docs/security-scan.md).
 

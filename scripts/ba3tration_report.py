@@ -1,7 +1,7 @@
 """Ba3tration-tester: one report for the three engines of a collected run.
 
 Reads what scripts/collect.sh decrypted on your machine and writes
-<run>/BA3TRATION-REPORT.md:
+<run>/BA3TRATION-REPORT.md, and the same as plain text in <run>/BA3TRATION-REPORT.txt:
   - security findings of the code scan (Semgrep + SemSec) and of the live scan
     (OWASP ZAP), grouped by OWASP Top 10:2025 category, most severe first
   - the functional summary of the AI testers (SUMMARY.md), unchanged
@@ -208,6 +208,30 @@ def render(findings, functional, engines):
     return "\n".join(lines)
 
 
+def as_text(markdown):
+    """The report without Markdown marks, for a plain text file: Notepad, an email, a ticket."""
+    out, lines = [], markdown.split("\n")
+    for i, line in enumerate(lines):
+        if re.fullmatch(r"\|[-| :]+\|", line.strip()):   # the rule under a table's header
+            continue
+        if line.startswith("|") and i + 1 < len(lines) and re.fullmatch(r"\|[-| :]+\|", lines[i + 1].strip()):
+            continue                                       # the header itself: each row says what it is
+        if line.startswith("|"):
+            line = "  " + ": ".join(c.strip() for c in line.strip().strip("|").split("|"))
+        line = re.sub(r"!\[([^\]]*)\]\(([^)]*)\)", r"\1 (\2)", line)   # image -> its caption and file
+        line = re.sub(r"\[([^\]]*)\]\(([^)]*)\)", r"\1 (\2)", line)    # link -> its text and address
+        line = line.replace("**", "").replace("`", "")
+        m = re.match(r"(#{1,6}) (.*)", line)
+        if m:
+            title = m.group(2)
+            out.append(title)
+            if len(m.group(1)) <= 2:
+                out.append(("=" if len(m.group(1)) == 1 else "-") * max(len(title), 8))
+            continue
+        out.append("" if line.strip() == "---" else line)
+    return "\n".join(out)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--run", help="a run directory written by scripts/collect.sh")
@@ -235,8 +259,15 @@ def main(argv=None):
         else:
             functional = ""
     out = Path(a.out or "BA3TRATION-REPORT.md")
-    out.write_text(render(findings, functional, engines), encoding="utf-8")
+    report = render(findings, functional, engines)
+    out.write_text(report, encoding="utf-8")
     print("Unified report: %s (%d security findings)" % (out, len(findings)))
+    # the same as plain text. utf-8-sig: with that mark Notepad and Windows PowerShell read the Arabic as Arabic
+    text = out.with_suffix(".txt")
+    if text != out:
+        with open(text, "w", encoding="utf-8-sig", newline="\r\n") as fh:
+            fh.write(as_text(report))
+        print("As a text file: %s" % text)
     return 0
 
 

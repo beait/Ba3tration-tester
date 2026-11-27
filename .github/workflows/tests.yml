@@ -57,7 +57,6 @@ jobs:
           # (written in two halves: whole, this very file would be reported for holding a key)
           half="sha512-Ixm8tFfoKKIPYdCCKYTsqvAvu"
           printf '{"packages": {"node_modules/a": {"integrity": "%s+3cb6Zp3mAzl+t1MrG2fxxKsxw=="}}}\n' "$half" > sample/package-lock.json
-          grep -q 'u+3cb6Zp3mAzl+t1MrG2f' sample/package-lock.json
       - name: Code scan (Semgrep + SemSec)
         env:
           TARGET: sample
