@@ -24,7 +24,8 @@ cp "$work/semsec"/*.yaml "$work/rules/" 2>/dev/null
 # What Semgrep says about a rule file is about SemSec's public rules, never about the code scanned:
 # it can go to the job log, and it is the only way to see why a file was left out.
 mkdir -p "$work/validate"
-docker run --rm -v "$work/rules:/rules:ro" -v "$work/validate:/validate" "$IMAGE" sh -c '
+# (in its Docker image Semgrep refuses to start with an empty /src, even to validate: the rules are mounted there too)
+docker run --rm -v "$work/rules:/rules:ro" -v "$work/rules:/src:ro" -v "$work/validate:/validate" "$IMAGE" sh -c '
   semgrep --version > /validate/version.txt 2>&1
   for f in /rules/*.yaml; do
     if semgrep --validate --metrics off --config "$f" > "/validate/$(basename "$f").log" 2>&1; then echo "$f"; fi
@@ -37,7 +38,7 @@ for f in "$work"/rules/*.yaml; do
 done
 for name in ${skipped[@]+"${skipped[@]}"}; do
   echo "::group::Why Semgrep rejected $name"
-  tail -n 25 "$work/validate/$name.log" 2>/dev/null || echo "(Semgrep wrote nothing)"
+  tail -n 12 "$work/validate/$name.log" 2>/dev/null || echo "(Semgrep wrote nothing)"
   echo "::endgroup::"
 done
 [ ${#used[@]} -gt 0 ] || { echo "::error::Semgrep accepted none of the SemSec rule files: its reasons are just above"; exit 1; }
