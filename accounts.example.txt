@@ -1,0 +1,8 @@
+# Test accounts for the testers, one per line:
+#   role   user-name-or-phone   password   personas-that-sign-in-as-it
+# Copy this file to accounts.txt (git ignores that name: it stays on your machine), put your
+# test accounts in it, then run:   python3 scripts/accounts.py set      (Windows: python scripts\accounts.py set)
+# No space inside a value. The personas are ids from personas.json, comma-separated; leave them
+# out for an account no persona uses yet. Test accounts on a test environment, never real ones.
+owner    owner@test.example    change-me    anna,clara
+rep      0500000001            change-me    malik

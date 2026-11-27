@@ -1,6 +1,8 @@
 # Never commit the private key that decrypts results
 *_private.pem
 *.key
+# Test accounts as text, for scripts/accounts.py set: on your machine only
+/accounts.txt
 /runs/
 node_modules/
 demo-app/android/

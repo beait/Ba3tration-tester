@@ -638,7 +638,65 @@ class Accounts(unittest.TestCase):
         self.assertNotIn("pass", out.getvalue().replace("password", ""))
         after = (self.tmp / "personas.json").read_text()
         self.assertEqual(after, personas.replace('"id": "anna",', '"id": "anna",\n    "account": "owner",').replace('"account": "old"', '"account": "rep"'))
-        self.assertIn("ghost: not found", out.getvalue())
+        self.assertIn("ghost: not a persona", out.getvalue())
+
+    def set_from_file(self, content, ignored=True, name="accounts.txt"):
+        import io
+        from unittest import mock
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import accounts
+        (self.tmp / "personas.json").write_text('[\n  {\n    "id": "anna",\n    "goal": "x"\n  },\n  {\n    "id": "malik",\n    "goal": "y"\n  }\n]\n')
+        (self.tmp / name).write_bytes(content)
+        sent = {}
+
+        def run(cmd, input=None, **kw):
+            if cmd[:2] == ["git", "check-ignore"]:
+                return subprocess.CompletedProcess(cmd, 0 if ignored else 1)
+            sent["cmd"], sent["body"] = cmd, input
+            return subprocess.CompletedProcess(cmd, 0)
+
+        def nobody(prompt=""):
+            raise AssertionError("a file was given: no question is asked")
+        out, cwd = io.StringIO(), os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            with mock.patch("builtins.input", nobody), mock.patch("getpass.getpass", nobody), \
+                    mock.patch("subprocess.run", run), mock.patch("sys.stdout", out):
+                code = accounts.cmd_set()
+        finally:
+            os.chdir(cwd)
+        return code, sent, out.getvalue()
+
+    def test_set_from_a_text_file(self):
+        text = ("\ufeff# my test accounts\r\n\r\nOwner  owner@test.example  0wner-pass  anna,ghost\r\n"
+                "rep\t0500000001\trep-pass\r\n").encode("utf-8")   # as Notepad saves it: a mark, Windows line ends
+        code, sent, said = self.set_from_file(text)
+        self.assertEqual(code, 0, said)
+        self.assertEqual(sent["cmd"], ["gh", "secret", "set", "TEST_ACCOUNTS"])
+        self.assertEqual(json.loads(sent["body"].decode("utf-8")), ACCOUNTS)
+        self.assertIn('"account": "owner"', (self.tmp / "personas.json").read_text())
+        self.assertIn("ghost: not a persona", said)
+        self.assertIn("still holds the passwords as text", said)
+        for value in ("0wner-pass", "rep-pass", "owner@test.example", "0500000001"):
+            self.assertNotIn(value, said)
+
+    def test_a_file_that_git_could_commit_is_refused(self):
+        code, sent, said = self.set_from_file(b"owner a@test.example pw\n", ignored=False)
+        self.assertEqual((code, sent), (1, {}))
+        self.assertIn("not ignored by git", said)
+        # in this repo the name is ignored, and the example holds no account
+        self.assertIn("/accounts.txt\n", (ROOT / ".gitignore").read_text(encoding="utf-8"))
+        self.assertEqual(self.set_from_file((ROOT / "accounts.example.txt").read_bytes())[0], 1)
+
+    def test_a_wrong_line_is_named_by_its_number_not_its_content(self):
+        for content, why in ((b"owner a@test.example\n", "line 1: write"), (b"# x\nowner a@test.example my secret words x\n", "line 2: write"),
+                             (b"owner a@x.example pw\nowner b@x.example pw2\n", "line 2: the role 'owner' is there twice"),
+                             (b"bad/role a@x.example pw\n", "line 1: a role name"), (b"# nothing\n", "holds no account"),
+                             (b"owner \xff\xfe pw\n", "not UTF-8")):
+            code, sent, said = self.set_from_file(content)
+            self.assertEqual((code, sent), (1, {}), why)
+            self.assertIn(why, said)
+            self.assertNotIn("secret words", said)
 
     def test_the_workflow_gives_the_secret_to_its_own_step_only(self):
         text = (ROOT / ".github/workflows/agent-testers.yml").read_text(encoding="utf-8")

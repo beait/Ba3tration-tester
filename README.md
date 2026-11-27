@@ -40,7 +40,7 @@ On Windows, in PowerShell: `.\collect.ps1 <run id>` (a plain `bash` there is oft
 
 `./check.sh` (Windows: `.\check.ps1`) says at any time whether this machine and your repo have everything the tool needs, and installs the programs that are missing after asking: Git, the GitHub CLI, Python.
 
-Testers that must sign in get test accounts, one per role, typed for them and never shown to them: `python3 scripts/accounts.py set`, or answer yes at the end of the setup. [Details](docs/test-accounts.md).
+Testers that must sign in get test accounts, one per role, typed for them and never shown to them: fill `accounts.txt` (from `accounts.example.txt`, it stays on your machine) and run `python3 scripts/accounts.py set`, or answer yes at the end of the setup. [Details](docs/test-accounts.md).
 
 Point it at your own app with the inputs of each workflow: the testers' options are in [TESTERS.md](TESTERS.md) and [docs/configuration.md](docs/configuration.md), the security engines in [docs/security-scan.md](docs/security-scan.md).
 

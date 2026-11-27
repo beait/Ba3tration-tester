@@ -10,20 +10,30 @@ change or delete whatever its account can reach.
 
 ## Set them up
 
-```bash
-python3 scripts/accounts.py set        # Windows: python scripts\accounts.py set
-```
+As text, the quick way:
 
-It asks, for each role, a user name (or e-mail, or phone) and a password, then which
-personas sign in as that role. It runs at the end of `setup.sh` / `setup.ps1` too, if you
-answer yes to its question.
+1. Copy `accounts.example.txt` to `accounts.txt` and put your test accounts in it, one per line:
 
-- The accounts go to the `TEST_ACCOUNTS` secret of your repo, through `gh secret set`. They
-  are not written to a file, not printed, and never part of the repo.
+   ```
+   # role   user name or phone   password   personas that sign in as it
+   owner    owner@test.example   ........   anna,clara
+   rep      0500000001           ........   malik
+   ```
+
+2. Run `python3 scripts/accounts.py set` (Windows: `python scripts\accounts.py set`).
+
+Without an `accounts.txt`, the same command asks for each account in the terminal instead, the
+password hidden. The setup (`setup.sh`, `setup.ps1`) runs it too, if you answer yes to its question.
+
+- `accounts.txt` stays on your machine. Git ignores that name, and the command refuses a file
+  that git could commit: your testers repo is public, and a file in it is readable by anyone.
+  Keep it to change an account later, or delete it once the command has run.
+- The accounts go to the `TEST_ACCOUNTS` secret of your repo, through `gh secret set`. The
+  runs read that secret, never the file.
 - The roles go to `personas.json`: `"account": "owner"` in each persona that signs in. A
   persona without it starts signed out, as before. Commit that file.
-- GitHub never gives a secret back: to change one account, run the command again and enter
-  them all.
+- GitHub never gives a secret back: to change one account, change the file (or answer the
+  questions again) and run the command again, with all the accounts.
 
 ## What happens in a run
 

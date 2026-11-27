@@ -40,7 +40,7 @@ gh run watch
 
 1. مرة واحدة: `.\setup.ps1`. يفحص البرامج المطلوبة ويثبّت الناقص بعد سؤالك، ثم مفتاح التشفير، وتوكن Claude أو مفتاح Anthropic، ثم يسأل عن حسابات المختبِرين.
    في أي وقت: `.\check.ps1` يقول هل كل ما تحتاجه الأداة موجود على جهازك وفي الريبو، ويثبّت الناقص (Git و GitHub CLI و Python).
-   حسابات تجريبية للمختبِرين، حساب لكل دور، تُكتب لهم في شاشة الدخول ولا يرونها: `python scripts\accounts.py set`. التفاصيل في [docs/test-accounts.md](docs/test-accounts.md).
+   حسابات تجريبية للمختبِرين، حساب لكل دور، تُكتب لهم في شاشة الدخول ولا يرونها: انسخ `accounts.example.txt` إلى `accounts.txt` واكتب فيه الحسابات (الملف يبقى على جهازك فقط)، ثم `python scripts\accounts.py set`. التفاصيل في [docs/test-accounts.md](docs/test-accounts.md).
 2. فحص الكود لريبو خاص: سر `SOURCE_REPO_TOKEN` بصلاحية قراءة فقط.
 3. فحص التطبيق الحي: سر `STAGING_URL`، وملف على موقعك في `/.well-known/ba3tration.txt` فيه سطر
    `ba3tration-site-verification=<owner>/<repo>`. التفاصيل في [docs/security-scan.md](docs/security-scan.md).

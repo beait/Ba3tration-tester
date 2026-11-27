@@ -2,10 +2,13 @@
 
 On your machine, once (and again whenever an account changes):
   python3 scripts/accounts.py set
-    asks, for each role (owner, manager, rep...), the user name and the password of a
-    test account, stores them all in the TEST_ACCOUNTS secret of this repo through
-    `gh secret set`, and writes which persona signs in as which role in personas.json
-    ("account": "<role>"). Nothing is written to a file, printed or sent anywhere else.
+    takes one test account per role (owner, manager, rep...), stores them all in the
+    TEST_ACCOUNTS secret of this repo through `gh secret set`, and writes which persona
+    signs in as which role in personas.json ("account": "<role>").
+    The accounts come from accounts.txt when that file is in the folder (one line per
+    account, see accounts.example.txt), and from questions in the terminal otherwise.
+    accounts.txt stays on your machine: git ignores that name, and the command refuses a
+    file that git could commit. Nothing is printed or sent anywhere else.
 
 On the runner, before the agent starts (the workflow does):
   python3 scripts/accounts.py setup          env: TEST_ACCOUNTS, PERSONA, PLATFORM
@@ -70,11 +73,45 @@ def assign(text, persona, role):
     return out if ok else None
 
 
-def cmd_set():
+def read_file(path):
+    """accounts.txt -> ({role: account}, {role: [personas]}), or a message that names the line, never its content."""
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return None, "%s is not UTF-8 text: in Notepad, Save as, Encoding UTF-8" % path
+    except OSError:
+        return None, "%s could not be read" % path
+    accounts, wanted = {}, {}
+    for n, line in enumerate(text.splitlines(), 1):
+        fields = line.split()
+        if not fields or fields[0].startswith("#"):
+            continue
+        if len(fields) not in (3, 4):
+            return None, "%s, line %d: write  role  user-name  password  personas  (no space inside a value; the personas are optional)" % (path, n)
+        role = fields[0].lower()
+        if not ROLE.fullmatch(role):
+            return None, "%s, line %d: a role name is made of lower-case letters, digits, - and _" % (path, n)
+        if role in accounts:
+            return None, "%s, line %d: the role '%s' is there twice" % (path, n, role)
+        if "change-me" in fields[1:3]:
+            return None, "%s, line %d: still the example's values" % (path, n)
+        accounts[role] = {"username": fields[1], "password": fields[2]}
+        wanted[role] = [p for p in fields[3].split(",") if p] if len(fields) == 4 else []
+    return (accounts, wanted) if accounts else (None, "%s holds no account" % path)
+
+
+def could_be_committed(path):
+    """True when the file is in a git repo that does not ignore it: one `git add .` away from being published."""
+    try:
+        return subprocess.run(["git", "check-ignore", "-q", str(path)], capture_output=True).returncode == 1
+    except OSError:
+        return False
+
+
+def ask_accounts():
     print("Test accounts for the testers, one per role.")
-    print("Use accounts made for testing, on a test environment: a tester taps everywhere and may")
-    print("change or delete what its account can reach. What you type here goes to the %s" % SECRET)
-    print("secret of this repo and nowhere else. It replaces the accounts saved before: enter them all.")
+    print("What you type here goes to the %s secret of this repo and nowhere else." % SECRET)
+    print("(Easier as text? Copy accounts.example.txt to accounts.txt, fill it, and run this again.)")
     print()
     accounts = {}
     while True:
@@ -92,39 +129,60 @@ def cmd_set():
         if not password or password != getpass.getpass("  The password again: "):
             print("  Empty, or not the same twice: role skipped, enter it again.")
             continue
-        if not (username + password).isascii():
-            print("  Note: on Android the typing tool only types plain Latin letters, digits and signs:")
-            print("  this account will not sign in there (it will on iOS and on the web).")
         accounts[role] = {"username": username, "password": password}
         print("  '%s' noted." % role)
+    return accounts
+
+
+def cmd_set(source="accounts.txt"):
+    source, wanted = Path(source), None
+    print("Use accounts made for testing, on a test environment: a tester taps everywhere and may")
+    print("change or delete what its account can reach. This replaces the accounts saved before.")
+    print()
+    if source.is_file():
+        if could_be_committed(source):
+            print("%s is not ignored by git: one `git add .` would publish it. Add its name to .gitignore, then run this again." % source)
+            return 1
+        accounts, wanted = read_file(source)
+        if accounts is None:
+            print(wanted)
+            return 1
+        print("Accounts read from %s: %s." % (source, ", ".join(sorted(accounts))))
+    else:
+        accounts = ask_accounts()
     if not accounts:
         print("No account entered: nothing changed.")
         return 1
+    if any(not (a["username"] + a["password"]).isascii() for a in accounts.values()):
+        print("Note: on Android the typing tool only types plain Latin letters, digits and signs: an account")
+        print("with other letters will not sign in there (it will on iOS and on the web).")
     done = subprocess.run(["gh", "secret", "set", SECRET], input=json.dumps(accounts, ensure_ascii=False).encode("utf-8"))
-    accounts_roles = sorted(accounts)
+    roles = sorted(accounts)
     del accounts
     if done.returncode:
         print("gh could not save the secret: nothing changed. Is this the folder of your repo, and are you logged in (gh auth status)?")
         return 1
-    print()
-    print("Secret %s set, with the roles: %s." % (SECRET, ", ".join(accounts_roles)))
+    print("Secret %s set, with the roles: %s." % (SECRET, ", ".join(roles)))
 
     path = Path("personas.json")
     try:
         text = path.read_text(encoding="utf-8")
-        personas = json.loads(text)
-    except (OSError, ValueError):
+        personas = [p["id"] for p in json.loads(text)]
+    except (OSError, ValueError, KeyError, TypeError):
         print('personas.json could not be read: add "account": "<role>" by hand to each persona that signs in.')
         return 0
-    print()
-    print("Which persona signs in as which role? A persona with no role starts signed out, as before.")
-    print("Personas: %s" % ", ".join(p["id"] for p in personas))
+    if wanted is None:
+        print()
+        print("Which persona signs in as which role? A persona with no role starts signed out, as before.")
+        print("Personas: %s" % ", ".join(personas))
+        wanted = {role: [x.strip() for x in ask("  Personas that sign in as '%s' (comma-separated, empty for none): " % role).split(",") if x.strip()]
+                  for role in roles}
     changed = []
-    for role in accounts_roles:
-        for persona in [x.strip() for x in ask("  Personas that sign in as '%s' (comma-separated, empty for none): " % role).split(",") if x.strip()]:
-            new = assign(text, persona, role) if any(p.get("id") == persona for p in personas) else None
+    for role in roles:
+        for persona in wanted.get(role, []):
+            new = assign(text, persona, role) if persona in personas else None
             if new is None:
-                print('    %s: not found or not written, add "account": "%s" to it by hand in personas.json' % (persona, role))
+                print('  %s: not a persona of personas.json, or not written: add "account": "%s" to it by hand' % (persona, role))
             else:
                 text = new
                 changed.append("%s as %s" % (persona, role))
@@ -133,6 +191,12 @@ def cmd_set():
         print("personas.json updated (%s)." % ", ".join(changed))
         if not os.environ.get("BA3TRATION_SETUP"):   # the setup commits it itself
             print('Commit and push it:  git add personas.json; git commit -m "Personas: test account roles"; git push')
+    elif not any(wanted.values()):
+        print('No persona signs in yet: give the personas in %s, or add "account": "<role>" in personas.json.' % source)
+    if source.is_file():
+        print()
+        print("%s still holds the passwords as text, on this machine only. Keep it to change an account later," % source)
+        print("or delete it: the secret is saved, the runs do not need the file.")
     return 0
 
 
@@ -244,7 +308,7 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     what = argv[0] if argv else ""
     if what == "set":
-        return cmd_set()
+        return cmd_set(*argv[1:2])
     if what == "setup":
         return cmd_setup()
     if what in ("status", "note", "username", "password"):

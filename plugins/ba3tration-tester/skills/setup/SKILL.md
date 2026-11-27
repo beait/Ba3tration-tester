@@ -37,7 +37,7 @@ Answer the user in their language. Template and docs: https://github.com/beait/B
 ## 2. Credentials rule
 
 You never read, print, store or ask for a credential, a token or a private key. Never open
-files under `~/.mobile-agent-testers/`. Secrets are set by the user, in their own terminal
+files under `~/.mobile-agent-testers/`, nor `accounts.txt` (the user's test accounts). Secrets are set by the user, in their own terminal
 (`gh secret set NAME` prompts for the value). If the user pastes a credential into the chat,
 do not reuse it: tell them to revoke it and to type the new one into the terminal prompt.
 
@@ -79,7 +79,8 @@ large text, dark mode, right-to-left languages), adapt their goals to the app, a
 `AGENT_BRIEF.md`: what to check and what is out of scope.
 
 When the testers must sign in, the user gives them test accounts, one per role, in their own
-terminal: `python3 scripts/accounts.py set` (docs/test-accounts.md). It stores them in the
+terminal: `python3 scripts/accounts.py set`, from their own `accounts.txt` or from questions
+(docs/test-accounts.md). It stores them in the
 `TEST_ACCOUNTS` secret and writes `"account": "<role>"` in the personas that sign in. You
 never ask for these values, never write them in a brief, a persona or any file, and never
 suggest a real account: test accounts, on a test environment.
