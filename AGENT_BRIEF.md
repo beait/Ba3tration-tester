@@ -32,6 +32,10 @@ Web (the site in the phone's browser)
 - Take a screenshot after EVERY action and look at it before the next one. Number them in order.
 - Never clear app data or reinstall. Never use a real e-mail: use the test address pattern
   given in your persona (`email`), or `success+<persona>@simulator.amazonses.com`.
+- When your instructions say that a test account is ready for you, sign in with it the way they
+  say (`python3 /opt/ba3tration/account.py username` and `password` type its values into the
+  focused field). You never see these values: do not look for them, do not write them anywhere.
+  Never change that account's password, e-mail or phone, and never delete it.
 - A blocked step is a finding, not the end of the test. Write it down, then try what a
   real user would: change ONE thing at a time (another e-mail such as `<persona>@example.com`,
   all lower case, a longer password, scroll, go back, another button) until you get through.

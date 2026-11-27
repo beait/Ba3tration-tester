@@ -66,6 +66,7 @@ jobs:
       ARTIFACT_PASSPHRASE: ${{ secrets.ARTIFACT_PASSPHRASE }}
       BUILD_ARGS: ${{ secrets.BUILD_ARGS }}
       REPLAY_PARAMS: ${{ secrets.REPLAY_PARAMS }}
+      TEST_ACCOUNTS: ${{ secrets.TEST_ACCOUNTS }}
       SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
 
   sast:

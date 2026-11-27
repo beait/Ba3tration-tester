@@ -35,9 +35,12 @@ fi
 # (page text, console errors), so its file tools stay in this checkout: read here, write only under results/.
 # shellcheck disable=SC1091  # sourced from the repo root, like the phone scripts
 source scripts/llm_env.sh || exit 1
-claude -p "Read $BRIEF and personas.json, then do the mission until the final report. PERSONA=$PERSONA PLATFORM=web URL=$WEB_URL. Device: $DEVICE, theme ${THEME:-light}${A11Y}, language $LOCALE. The site is already open in the phone's browser: use the commands of the brief directly. Report anything that does not fit this screen (cut text, off-screen buttons, content under fixed bars, sideways scrolling, broken layout)." \
+# A test account for this persona's role, when the repo has some (scripts/accounts.py): the agent is told
+# how to have it typed, never its values
+ACCOUNT_NOTE=$(python3 /opt/ba3tration/account.py note 2>/dev/null || true)
+claude -p "Read $BRIEF and personas.json, then do the mission until the final report. PERSONA=$PERSONA PLATFORM=web URL=$WEB_URL. Device: $DEVICE, theme ${THEME:-light}${A11Y}, language $LOCALE. The site is already open in the phone's browser: use the commands of the brief directly.${ACCOUNT_NOTE:+ $ACCOUNT_NOTE} Report anything that does not fit this screen (cut text, off-screen buttons, content under fixed bars, sideways scrolling, broken layout)." \
   --model "${MODEL:-sonnet}" --max-turns 400 --output-format json \
-  --allowedTools "Bash(bash scripts/web/gesture.sh:*),Bash(python3 scripts/web/screen.py:*),Bash(python3 scripts/web/type.py:*),Bash(sleep:*),Bash(ls:*),Bash(mkdir:*),Read(./**),Edit(./results/**)" \
+  --allowedTools "Bash(bash scripts/web/gesture.sh:*),Bash(python3 scripts/web/screen.py:*),Bash(python3 scripts/web/type.py:*),Bash(python3 /opt/ba3tration/account.py:*),Bash(sleep:*),Bash(ls:*),Bash(mkdir:*),Read(./**),Edit(./results/**)" \
   > results/agent-output.json 2> results/agent-errors.txt
 CODE=$?
 python3 scripts/agent_status.py results/agent-output.json results/agent-errors.txt "$PERSONA" || true

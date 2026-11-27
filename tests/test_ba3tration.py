@@ -521,6 +521,226 @@ class Maestro(unittest.TestCase):
             self.assertRegex(text, r"MAESTRO_SHA256: [0-9a-f]{64}\b", name)
 
 
+FAKE_TYPE = """import os, sys
+# Stands in for a platform's typing tool: notes what it was asked to type, and with which PATH
+with open(os.environ["TYPED"], "a") as f:
+    f.write(sys.argv[1] + "\\t" + os.environ.get("PATH", "") + "\\t" + os.environ.get("ECR_ACTION_LOG", "-") + "\\n")
+print("failed: nothing has the focus" if os.environ.get("TYPE_FAILS") else "typed: check it on the next screenshot")
+"""
+ACCOUNTS = {"owner": {"username": "owner@test.example", "password": "0wner-pass"},
+            "rep": {"username": "0500000001", "password": "rep-pass"}}
+
+
+class Accounts(unittest.TestCase):
+    """scripts/accounts.py: test accounts typed for the testers, never shown to them."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.work = self.tmp / "work"
+        (self.work / "scripts/android").mkdir(parents=True)
+        (self.work / "scripts/android/shim").mkdir()
+        shutil.copy(ROOT / "scripts/accounts.py", self.work / "scripts/accounts.py")
+        (self.work / "scripts/android/type.py").write_text(FAKE_TYPE)
+        (self.work / "personas.json").write_text(json.dumps([{"id": "anna", "account": "owner"}, {"id": "malik"},
+                                                             {"id": "noah", "account": "manager"}]))
+        self.store = self.tmp / "store"
+        self.env = dict(os.environ, BA3TRATION_STORE=str(self.store), BA3TRATION_NO_SUDO="1", TYPED=str(self.tmp / "typed"),
+                        PATH="%s%s%s" % (self.work / "scripts/android/shim", os.pathsep, os.environ["PATH"]))
+
+    def setup(self, persona, secret=None):
+        env = dict(self.env, PERSONA=persona, PLATFORM="android", TEST_ACCOUNTS=json.dumps(ACCOUNTS) if secret is None else secret)
+        return subprocess.run([sys.executable, "scripts/accounts.py", "setup"], cwd=self.work, env=env, capture_output=True, text=True)
+
+    def helper(self, what, **env):
+        return subprocess.run([sys.executable, str(self.store / "account.py"), what], cwd=self.work, env=dict(self.env, **env),
+                              capture_output=True, text=True)
+
+    def test_the_persona_gets_the_account_of_its_role_only(self):
+        res = self.setup("anna")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("role 'owner'", res.stdout)
+        kept = json.loads((self.store / "account.json").read_text())
+        self.assertEqual((kept["role"], kept["username"], kept["platform"]), ("owner", "owner@test.example", "android"))
+        self.assertNotIn("rep-pass", (self.store / "account.json").read_text())
+        self.assertEqual(oct((self.store / "account.json").stat().st_mode & 0o777), "0o600")
+        # the log would show *** if a tool ever printed a value; nothing else of the values is printed
+        self.assertEqual(sorted(line for line in res.stdout.splitlines() if "0wner-pass" in line or "owner@test" in line),
+                         ["::add-mask::0wner-pass", "::add-mask::owner@test.example"])
+
+    def test_no_secret_no_role_or_an_unknown_role_is_a_tester_signed_out(self):
+        for persona, secret, said in (("anna", "", "No TEST_ACCOUNTS secret"), ("malik", None, 'has no "account"'),
+                                      ("noah", None, "holds no such account"), ("anna", "{not json", "::warning::")):
+            res = self.setup(persona, secret)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertIn(said, res.stdout)
+            self.assertFalse((self.store / "account.json").exists(), said)
+            self.assertNotIn("pass", res.stdout)
+            self.assertEqual(self.helper("note").stdout if (self.store / "account.py").exists() else "", "")
+
+    def test_the_agent_is_told_how_to_sign_in_never_the_values(self):
+        self.setup("anna")
+        for what in ("note", "status"):
+            said = self.helper(what).stdout
+            self.assertIn("role: owner", said)
+            self.assertIn("account.py username", said)
+            self.assertNotIn("0wner-pass", said)
+            self.assertNotIn("owner@test.example", said)
+
+    def test_the_values_are_typed_by_the_copy_the_agent_cannot_edit(self):
+        self.setup("anna")
+        # what the agent could have changed in the checkout since: not used
+        (self.work / "scripts/android/type.py").write_text("print('typed: stolen')\n")
+        res = self.helper("password", ECR_ACTION_LOG=str(self.tmp / "actions.tsv"))
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(res.stdout.strip(), "typed the password of the 'owner' test account: check the field on the next screenshot")
+        self.helper("username")
+        typed = [line.split("\t") for line in (self.tmp / "typed").read_text().splitlines()]
+        self.assertEqual([t[0] for t in typed], ["0wner-pass", "owner@test.example"])
+        for _, path, log in typed:
+            self.assertNotIn(str(self.work), path)   # no folder of the checkout on PATH: the real adb, not the one that notes
+            self.assertEqual(log, "-")               # and the typing tool notes nothing itself
+        # the path keeps the step, under a name
+        self.assertEqual((self.tmp / "actions.tsv").read_text(), "0\ttype\t<owner test account: password>\n")
+
+    def test_a_failure_does_not_say_the_value(self):
+        self.setup("anna")
+        res = self.helper("password", TYPE_FAILS="1")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("failed: the password was not typed", res.stdout)
+        self.assertNotIn("0wner-pass", res.stdout + res.stderr)
+        self.assertEqual(self.helper("username", BA3TRATION_STORE="").returncode, 0)
+
+    def test_set_saves_the_secret_through_gh_and_names_the_roles_in_personas(self):
+        import io
+        from unittest import mock
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import accounts
+        personas = '[\n  {\n    "id": "anna",\n    "goal": "x"\n  },\n  {\n    "id": "malik",\n    "account": "old",\n    "goal": "y"\n  }\n]\n'
+        (self.tmp / "personas.json").write_text(personas)
+        answers = iter(["Owner", "owner@test.example", "bad role!", "rep", "0500000001", "", "anna, ghost", "malik"])
+        passwords = iter(["0wner-pass", "0wner-pass", "rep-pass", "rep-pass"])
+        sent = {}
+
+        def gh(cmd, input=None, **kw):
+            sent["cmd"], sent["body"] = cmd, input
+            return subprocess.CompletedProcess(cmd, 0)
+        out, cwd = io.StringIO(), os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            with mock.patch("builtins.input", lambda prompt="": next(answers)), mock.patch("getpass.getpass", lambda prompt="": next(passwords)), \
+                    mock.patch("subprocess.run", gh), mock.patch("sys.stdout", out):
+                self.assertEqual(accounts.cmd_set(), 0)
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(sent["cmd"], ["gh", "secret", "set", "TEST_ACCOUNTS"])   # the values on stdin, never on the command line
+        self.assertEqual(json.loads(sent["body"].decode("utf-8")), ACCOUNTS)
+        self.assertNotIn("pass", out.getvalue().replace("password", ""))
+        after = (self.tmp / "personas.json").read_text()
+        self.assertEqual(after, personas.replace('"id": "anna",', '"id": "anna",\n    "account": "owner",').replace('"account": "old"', '"account": "rep"'))
+        self.assertIn("ghost: not found", out.getvalue())
+
+    def test_the_workflow_gives_the_secret_to_its_own_step_only(self):
+        text = (ROOT / ".github/workflows/agent-testers.yml").read_text(encoding="utf-8")
+        self.assertEqual(text.count("TEST_ACCOUNTS: ${{ secrets.TEST_ACCOUNTS }}"), 3)
+        for block in text.split("\n      - name: ")[1:]:
+            if "secrets.TEST_ACCOUNTS" in block:
+                self.assertTrue(block.startswith("Test account of this persona\n"), block[:60])
+                self.assertIn("run: python3 scripts/accounts.py setup", block)
+                self.assertNotIn("ANTHROPIC_API_KEY", block)
+        for platform in ("android", "ios", "web"):
+            script = (ROOT / "scripts" / platform / "run_agent.sh").read_text(encoding="utf-8")
+            self.assertIn("Bash(python3 /opt/ba3tration/account.py:*)", script, platform)
+            self.assertIn("ACCOUNT_NOTE=$(python3 /opt/ba3tration/account.py note", script, platform)
+            self.assertNotIn("TEST_ACCOUNTS", script, platform)
+
+
+CHECK_GH = """#!/usr/bin/env bash
+case "$*" in
+  "auth status") [ -z "${GH_LOGGED_OUT:-}" ] ;;
+  "repo view --json nameWithOwner -q .nameWithOwner") echo "someone/testers" ;;
+  "secret list --json name -q .[].name") printf '%s\\n' $GH_SECRETS ;;
+  *) echo "unexpected gh call: $*" >&2; exit 1 ;;
+esac
+"""
+
+
+@unittest.skipUnless(shutil.which("bash") and shutil.which("git") and shutil.which("openssl"), "needs bash, git and openssl")
+class Check(unittest.TestCase):
+    """check.sh: what the tool needs, what is missing, and nothing installed unasked."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        for d in ("bin", "home/.mobile-agent-testers", "repo"):
+            (self.tmp / d).mkdir(parents=True)
+        for name, body in (("gh", CHECK_GH), ("sudo", '#!/usr/bin/env bash\n"$@"\n'),
+                           ("apt-get", '#!/usr/bin/env bash\necho "$*" >> "$INSTALL_LOG"\n')):
+            (self.tmp / "bin" / name).write_text(body)
+            (self.tmp / "bin" / name).chmod(0o755)
+
+    def check(self, *args, missing="brew", secrets="", **env):
+        e = dict(os.environ, PATH="%s%s%s" % (self.tmp / "bin", os.pathsep, os.environ["PATH"]), HOME=str(self.tmp / "home"),
+                 BA3TRATION_CHECK_MISSING=missing, GH_SECRETS=secrets, INSTALL_LOG=str(self.tmp / "installed"))
+        e.update(env)
+        return subprocess.run(["bash", str(ROOT / "check.sh"), *args], cwd=self.tmp / "repo", env=e, capture_output=True,
+                              text=True, stdin=subprocess.DEVNULL)
+
+    def test_a_missing_program_is_named_and_nothing_is_installed_unasked(self):
+        res = self.check(missing="brew gh")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("MISSING  GitHub CLI", res.stdout)
+        self.assertIn("sudo apt-get update && sudo apt-get install -y gh", res.stdout)   # the command is shown
+        self.assertIn("Not installed.", res.stdout)                                       # no one at the keyboard: not run
+        self.assertFalse((self.tmp / "installed").exists())
+        self.assertIn("Still missing: gh", res.stdout)
+        self.assertNotIn("To install", self.check("--no-install", missing="brew gh").stdout)
+
+    def test_yes_installs_what_is_missing_then_checks_again(self):
+        res = self.check("--yes", missing="brew gh python3")
+        self.assertEqual((self.tmp / "installed").read_text().splitlines(), ["update", "install -y gh python3"])
+        self.assertEqual(res.stdout.count("Programs on this machine:"), 2)
+
+    def test_a_repo_not_set_up_yet_is_told_what_is_left(self):
+        res = self.check()
+        self.assertEqual(res.returncode, 1)
+        for line in ("ok       repo someone/testers", "TO DO    encryption key:  ./setup.sh",
+                     "TO DO    secret ARTIFACT_PASSPHRASE", "TO DO    a model key for the testers", "3 thing(s) left to do"):
+            self.assertIn(line, res.stdout)
+        self.assertIn("log in to GitHub:  gh auth login", self.check(GH_LOGGED_OUT="1").stdout)
+
+    def test_everything_in_place(self):
+        (self.tmp / "home/.mobile-agent-testers/someone_testers.pem").write_text("never opened by the check")
+        (self.tmp / "repo/results_public.pem").write_text("public")
+        res = self.check(secrets="ARTIFACT_PASSPHRASE ANTHROPIC_API_KEY")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("Everything the tool needs is here", res.stdout)
+        self.assertIn("no test accounts: the testers start signed out", res.stdout)   # said, not counted as a problem
+        self.assertIn("ok       test accounts", self.check(secrets="ARTIFACT_PASSPHRASE LLM_API_KEY TEST_ACCOUNTS").stdout)
+        self.assertNotIn("Your GitHub account", self.check("--programs").stdout)
+
+    def test_the_setup_checks_first_and_asks_for_the_accounts_last(self):
+        sh, ps = (ROOT / "setup.sh").read_text(encoding="utf-8"), (ROOT / "setup.ps1").read_text(encoding="utf-8")
+        self.assertLess(sh.index("bash check.sh --programs"), sh.index("gh auth status"))
+        self.assertLess(sh.index("Add results public key"), sh.index("scripts/accounts.py set"))
+        self.assertLess(ps.index('"check.ps1") -Programs'), ps.index("gh auth status"))
+        self.assertLess(ps.index("Add results public key"), ps.index("scripts/accounts.py set"))
+
+    def test_the_windows_scripts_are_whole(self):
+        """No PowerShell here to run them: at least every bracket and quote is closed, and they name the same things."""
+        for name in ("check.ps1", "collect.ps1", "setup.ps1"):
+            text = (ROOT / name).read_text(encoding="utf-8")
+            code = "\n".join(line.split(" #")[0] for line in text.splitlines() if not line.lstrip().startswith("#"))
+            self.assertEqual(code.count('"') % 2, 0, name)
+            bare = re.sub(r'"[^"\n]*"', '""', code)   # brackets inside a text are text
+            for a, b in ("{}", "()", "[]"):
+                self.assertEqual(bare.count(a), bare.count(b), "%s: %s and %s" % (name, a, b))
+            self.assertTrue(text.isascii(), name)   # Windows PowerShell reads a script without a mark as ANSI
+        check = (ROOT / "check.ps1").read_text(encoding="utf-8")
+        for needed in ("Git.Git", "GitHub.cli", "Python.Python.3", "ARTIFACT_PASSPHRASE", "TEST_ACCOUNTS", "gh auth login"):
+            self.assertIn(needed, check)
+
+
 FAKE_GH = """#!/usr/bin/env bash
 case "$1 $2" in
   "repo view") echo "someone/app" ;;

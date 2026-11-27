@@ -125,6 +125,7 @@ on:
       BUILD_ARGS: { required: false }
       REPLAY_PARAMS: { required: false }
       SOURCE_REPO_TOKEN: { required: false }
+      TEST_ACCOUNTS: { required: false }
 
 permissions:
   contents: read
@@ -344,6 +345,16 @@ jobs:
           sudo iptables -I OUTPUT -m owner --gid-owner noinet ! -o lo -j REJECT
           sudo ip6tables -I OUTPUT -m owner --gid-owner noinet ! -o lo -j REJECT
 
+      # The account of this persona's role, kept where the agent's tools cannot read it (scripts/accounts.py).
+      # The secret is in this step only: the agent's own step never has it.
+      - name: Test account of this persona
+        if: inputs.replay_traces == ''
+        env:
+          TEST_ACCOUNTS: ${{ secrets.TEST_ACCOUNTS }}
+          PERSONA: ${{ matrix.persona }}
+          PLATFORM: android
+        run: python3 scripts/accounts.py setup
+
       - name: Emulator + agent
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d   # v2
         env:
@@ -469,6 +480,15 @@ jobs:
           GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
         run: bash scripts/bug_report.sh
 
+      # The account of this persona's role, kept where the agent's tools cannot read it (scripts/accounts.py).
+      # The secret is in this step only: the agent's own step never has it.
+      - name: Test account of this persona
+        env:
+          TEST_ACCOUNTS: ${{ secrets.TEST_ACCOUNTS }}
+          PERSONA: ${{ matrix.persona }}
+          PLATFORM: ios
+        run: python3 scripts/accounts.py setup
+
       - name: Agent
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -532,6 +552,15 @@ jobs:
           BUG_REPORT: ${{ inputs.bug_report }}
           GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
         run: bash scripts/bug_report.sh
+
+      # The account of this persona's role, kept where the agent's tools cannot read it (scripts/accounts.py).
+      # The secret is in this step only: the agent's own step never has it.
+      - name: Test account of this persona
+        env:
+          TEST_ACCOUNTS: ${{ secrets.TEST_ACCOUNTS }}
+          PERSONA: ${{ matrix.persona }}
+          PLATFORM: web
+        run: python3 scripts/accounts.py setup
 
       # Hosts of block_hosts are blocked inside the browser (scripts/web/browser.py):
       # the tester is told where a link to one of them would have gone.

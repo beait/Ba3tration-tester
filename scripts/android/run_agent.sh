@@ -92,8 +92,12 @@ fi
 # with robot+agent, an agent is called only when the robot met a form it could not pass.
 ECR_REAL_ADB="$(command -v adb)"
 export ECR_REAL_ADB
-ALLOWED="Bash(adb:*),Bash(python3 scripts/android/screen.py:*),Bash(python3 scripts/android/type.py:*),Bash(sleep:*),Bash(ls:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Edit"
+ALLOWED="Bash(adb:*),Bash(python3 scripts/android/screen.py:*),Bash(python3 scripts/android/type.py:*),Bash(python3 /opt/ba3tration/account.py:*),Bash(sleep:*),Bash(ls:*),Bash(cat:*),Bash(mkdir:*),Read,Write,Edit"
 SETTINGS="Device: ${DEVICE}, font scale x${FONT_SCALE:-1.0}, theme ${THEME:-light}${A11Y}, language $LOCALE."
+# A test account for this persona's role, when the repo has some (scripts/accounts.py): the agent is told
+# how to have it typed, never its values
+ACCOUNT_NOTE=$(python3 /opt/ba3tration/account.py note 2>/dev/null || true)
+SETTINGS="$SETTINGS${ACCOUNT_NOTE:+ $ACCOUNT_NOTE}"
 CODE=0
 case "${MAP:-none}" in
   robot|robot+agent)

@@ -50,9 +50,13 @@ gh repo create <name> --public --template beait/Ba3tration-tester --clone
 cd <name> && ./setup.sh        # Windows: .\setup.ps1
 ```
 
-The user runs the setup in their own terminal, not through you. It creates the key pair
-that encrypts results (the private half never leaves their machine), sets the repo secrets
-it needs and asks them, in that terminal, for the model access.
+The user runs the setup in their own terminal, not through you. It checks the programs it
+needs and offers to install the missing ones, creates the key pair that encrypts results
+(the private half never leaves their machine), sets the repo secrets it needs and asks them,
+in that terminal, for the model access and, if the testers must sign in, for test accounts.
+
+`./check.sh` (Windows: `.\check.ps1`) tells at any time what is missing on the machine or
+in the repo. Run it, or ask the user to, before you look for a cause yourself.
 
 ## 4. Point the testers at the app
 
@@ -72,7 +76,13 @@ Keys the build needs go in a `BUILD_ARGS` secret: run inputs are public.
 
 Pick personas from `personas.json` that match the app's audience (small phones, tablets,
 large text, dark mode, right-to-left languages), adapt their goals to the app, and adapt
-`AGENT_BRIEF.md`: what to check, how to sign in with test accounts, what is out of scope.
+`AGENT_BRIEF.md`: what to check and what is out of scope.
+
+When the testers must sign in, the user gives them test accounts, one per role, in their own
+terminal: `python3 scripts/accounts.py set` (docs/test-accounts.md). It stores them in the
+`TEST_ACCOUNTS` secret and writes `"account": "<role>"` in the personas that sign in. You
+never ask for these values, never write them in a brief, a persona or any file, and never
+suggest a real account: test accounts, on a test environment.
 Keep the rules "screenshot after every action" and "write findings.json". Add the app's
 analytics hosts to `block_hosts`.
 

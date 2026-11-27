@@ -4,7 +4,14 @@
 # 2. sets the ARTIFACT_PASSPHRASE secret
 # 3. asks for your Claude token (subscription) or API key and stores it as a secret
 # 4. commits and pushes the public key
+# 5. asks whether the testers must sign in to the app, and if so for one test account per role
+# The programs it needs are checked first, and installed if you agree (check.ps1).
 $ErrorActionPreference = "Continue"
+if (Test-Path (Join-Path $PSScriptRoot "check.ps1")) {
+  & (Join-Path $PSScriptRoot "check.ps1") -Programs
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+  Write-Host ""
+}
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { Write-Host "Install the GitHub CLI: winget install --id GitHub.cli"; exit 1 }
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Host "Install Git: winget install --id Git.Git"; exit 1 }
 gh auth status *> $null; if ($LASTEXITCODE -ne 0) { Write-Host "Run: gh auth login"; exit 1 }
@@ -59,8 +66,38 @@ if (($secrets -notcontains "CLAUDE_CODE_OAUTH_TOKEN") -and ($secrets -notcontain
 git add results_public.pem
 git diff --cached --quiet
 if ($LASTEXITCODE -ne 0) { git commit -qm "Add results public key"; git push -q; Write-Host "Public key committed and pushed" }
+
+# 5. Test accounts, when the testers must sign in (scripts/accounts.py)
+if (Test-Path "scripts\accounts.py") {
+  Write-Host ""
+  if ($secrets -contains "TEST_ACCOUNTS") {
+    Write-Host "Test accounts are already saved. To change them: python scripts\accounts.py set"
+  } else {
+    $answer = Read-Host "Do your testers need to sign in to the app with test accounts? [y/N]"
+    if ($answer -match "^(y|yes)$") {
+      $env:BA3TRATION_SETUP = "1"
+      $python = ""
+      foreach ($name in @("python", "py", "python3")) {
+        if (-not (Get-Command $name -ErrorAction SilentlyContinue)) { continue }
+        if ($name -eq "py") { & py -3 -c "pass" *> $null } else { & $name -c "pass" *> $null }
+        if ($LASTEXITCODE -eq 0) { $python = $name; break }
+      }
+      if ($python -eq "") { Write-Host "Python 3 was not found: run .\check.ps1, then python scripts\accounts.py set" }
+      elseif ($python -eq "py") { & py -3 scripts/accounts.py set }
+      else { & $python scripts/accounts.py set }
+      Remove-Item Env:BA3TRATION_SETUP
+      git add personas.json
+      git diff --cached --quiet
+      if ($LASTEXITCODE -ne 0) { git commit -qm "Personas: test account roles"; git push -q; Write-Host "personas.json committed and pushed" }
+    } else { Write-Host "Later, if they do: python scripts\accounts.py set" }
+  }
+}
 Write-Host ""
 Write-Host "Done. Run the demo (2 Android + 2 iOS testers on the demo app, about 20 min):"
 Write-Host "  gh workflow run agent-testers.yml"
 Write-Host "Follow it:"
 Write-Host "  gh run watch"
+Write-Host "Then download and decrypt the reports:"
+Write-Host "  .\collect.ps1 <run id>"
+Write-Host "Is everything in place? At any time:"
+Write-Host "  .\check.ps1"

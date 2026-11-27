@@ -24,7 +24,7 @@ English · [العربية](README.ar.md)
 
 ```bash
 gh repo create my-tester --public --template beait/Ba3tration-tester --clone
-cd my-tester && ./setup.sh             # Windows: .\setup.ps1
+cd my-tester && ./setup.sh             # Windows: .\setup.ps1. Installs what is missing, then the key, the model key, the test accounts
 gh workflow run ba3tration.yml         # demo app: testers + code scan
 gh run watch
 bash scripts/collect.sh <run id>       # decrypts on your machine
@@ -37,6 +37,10 @@ On Windows, in PowerShell: `.\collect.ps1 <run id>` (a plain `bash` there is oft
 - `SUMMARY.md`: what the testers found, grouped, with screenshots next to it.
 - `BA3TRATION-REPORT.md`: security findings under their OWASP Top 10:2025 category, most severe first, then the testers' summary.
 - `BA3TRATION-REPORT.txt`: the same report as plain text, for Notepad, an email or a ticket.
+
+`./check.sh` (Windows: `.\check.ps1`) says at any time whether this machine and your repo have everything the tool needs, and installs the programs that are missing after asking: Git, the GitHub CLI, Python.
+
+Testers that must sign in get test accounts, one per role, typed for them and never shown to them: `python3 scripts/accounts.py set`, or answer yes at the end of the setup. [Details](docs/test-accounts.md).
 
 Point it at your own app with the inputs of each workflow: the testers' options are in [TESTERS.md](TESTERS.md) and [docs/configuration.md](docs/configuration.md), the security engines in [docs/security-scan.md](docs/security-scan.md).
 

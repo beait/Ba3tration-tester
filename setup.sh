@@ -4,7 +4,10 @@
 #  2. sets the ARTIFACT_PASSPHRASE secret
 #  3. asks for your Claude token (subscription) or API key and stores it as a secret
 #  4. commits and pushes the public key
+#  5. asks whether the testers must sign in to the app, and if so for one test account per role
+# The programs it needs are checked first, and installed if you agree (check.sh).
 set -euo pipefail
+if [ -f check.sh ]; then bash check.sh --programs || exit 1; echo; fi
 command -v gh >/dev/null || { echo "Install the GitHub CLI first: https://cli.github.com"; exit 1; }
 command -v openssl >/dev/null || { echo "openssl is required"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Run: gh auth login"; exit 1; }
@@ -64,6 +67,23 @@ if ! git diff --quiet -- results_public.pem 2>/dev/null || ! git ls-files --erro
   git add results_public.pem && git commit -qm "Add results public key" && git push -q
   echo "Public key committed and pushed"
 fi
+# 5. Test accounts, when the testers must sign in (scripts/accounts.py). Only with someone at the keyboard.
+if [ -f scripts/accounts.py ] && [ -t 0 ]; then
+  echo
+  if grep -qx TEST_ACCOUNTS <<<"$SECRETS"; then
+    echo "Test accounts are already saved. To change them: python3 scripts/accounts.py set"
+  else
+    read -rp "Do your testers need to sign in to the app with test accounts? [y/N] " ANSWER || ANSWER=""
+    case "$ANSWER" in
+      y|Y|yes|Yes)
+        BA3TRATION_SETUP=1 python3 scripts/accounts.py set || true
+        if ! git diff --quiet -- personas.json 2>/dev/null; then
+          git add personas.json && git commit -qm "Personas: test account roles" && git push -q && echo "personas.json committed and pushed"
+        fi ;;
+      *) echo "Later, if they do: python3 scripts/accounts.py set" ;;
+    esac
+  fi
+fi
 cat <<MSG
 
 Done. Run the demo (2 Android + 2 iOS testers on the demo app, about 20 min):
@@ -72,4 +92,6 @@ Follow it:
   gh run watch
 Then download and decrypt the reports:
   bash scripts/collect.sh \$(gh run list --workflow agent-testers.yml -L 1 --json databaseId -q '.[0].databaseId')
+Is everything in place? At any time:
+  ./check.sh
 MSG

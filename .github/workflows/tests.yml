@@ -75,3 +75,49 @@ jobs:
         if: failure()
         run: cat results/sast/console.log 2>/dev/null | tail -n 80
 
+  test-accounts:
+    # On a real runner, with the real sudo: the account is where the agent's tools cannot
+    # read it, and the command the agent runs still types it. Made-up values, no secret.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - name: A persona with a role, and its made-up account
+        env:
+          TEST_ACCOUNTS: '{"owner": {"username": "owner@test.example", "password": "made-up-for-this-check"}, "rep": {"username": "rep@test.example", "password": "another-made-up"}}'
+          PERSONA: anna
+          PLATFORM: android
+        run: |
+          python3 - <<'EOF'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          import accounts
+          path = Path("personas.json")
+          path.write_text(accounts.assign(path.read_text(encoding="utf-8"), "anna", "owner"), encoding="utf-8")
+          EOF
+          python3 scripts/accounts.py setup
+      - name: Out of the agent's reach
+        run: |
+          if cat /opt/ba3tration/account.json > /dev/null 2>&1; then echo "::error::the account can be read without root"; exit 1; fi
+          for f in account.py scripts/android/type.py; do
+            test "$(stat -c %U "/opt/ba3tration/$f")" = root
+            if ( echo "#" >> "/opt/ba3tration/$f" ) 2> /dev/null; then echo "::error::$f can be edited without root"; exit 1; fi
+          done
+          sudo grep -q made-up-for-this-check /opt/ba3tration/account.json
+          if sudo grep -q another-made-up /opt/ba3tration/account.json; then echo "::error::the account of another role was kept"; exit 1; fi
+      - name: Typed for the agent, not told to it
+        run: |
+          # a stand-in for adb, outside the checkout as the real one is
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/usr/bin/env bash\necho "$*" >> "$ADB_LOG"\n' > "$RUNNER_TEMP/bin/adb"
+          chmod +x "$RUNNER_TEMP/bin/adb"
+          export ADB_LOG="$RUNNER_TEMP/adb.log" PATH="$RUNNER_TEMP/bin:$PATH"
+          python3 /opt/ba3tration/account.py status > said.txt
+          python3 /opt/ba3tration/account.py username >> said.txt
+          python3 /opt/ba3tration/account.py password >> said.txt
+          cat said.txt
+          grep -q "role: owner" said.txt
+          grep -q "typed the password of the 'owner' test account" said.txt
+          if grep -q -e made-up-for-this-check -e owner@test.example said.txt; then echo "::error::a value was told to the agent"; exit 1; fi
+          grep -q "shell input text made-up-for-this-check" "$ADB_LOG"
+
