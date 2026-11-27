@@ -303,9 +303,12 @@ else echo 0123456789abcdef0123456789abcdef01234567; fi
 FAKE_DOCKER = """#!/usr/bin/env bash
 # Stands in for docker run semgrep/semgrep: the validation pass, then the scan
 printf '%s\\n' "$*" >> "$DOCKER_LOG"
-out=""; for a in "$@"; do case "$a" in *:/out) out="${a%:/out}";; esac; done
+out=""; val=""; for a in "$@"; do case "$a" in *:/out) out="${a%:/out}";; *:/validate) val="${a%:/validate}";; esac; done
 case " $* " in
-  *" sh -c "*) for f in $FAKE_VALID; do echo "/rules/$f"; done ;;
+  *" sh -c "*)
+    echo 1.99.0 > "$val/version.txt"
+    for f in a.yaml b.yaml; do echo "Configuration is invalid: $f has an unknown key" > "$val/$f.log"; done
+    for f in $FAKE_VALID; do echo "/rules/$f"; done ;;
   *" scan "*)
     echo "finding: semsec.js.sql-injection in /src/api/users.js"   # Semgrep's own console
     case " $* " in *" p/owasp-top-ten "*) [ -z "${FAKE_PACK_FAILS:-}" ] || exit 2 ;; esac
@@ -344,6 +347,7 @@ class CodeScan(unittest.TestCase):
         res, meta = self.scan()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("SemSec rule files used: a.yaml b.yaml", res.stdout)
+        self.assertIn("Semgrep 1.99.0", res.stdout)
         self.assertIn("2 files read", res.stdout)
         self.assertEqual((meta["semgrep_exit"], meta["owasp_pack"], meta["files_scanned"]), (0, True, 2))
         # each rule file by name: never the folder, never the rules repo's own workflow
@@ -372,6 +376,10 @@ class CodeScan(unittest.TestCase):
         res, meta = self.scan(FAKE_VALID="a.yaml")
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("left out: b.yaml", res.stdout)
+        # why: Semgrep's words on a public rule file, the only thing of its console that reaches the log
+        self.assertIn("::group::Why Semgrep rejected b.yaml", res.stdout)
+        self.assertIn("b.yaml has an unknown key", res.stdout)
+        self.assertNotIn("a.yaml has an unknown key", res.stdout)
         self.assertNotIn("/rules/b.yaml", self.scans()[0])
         self.assertEqual(meta["rule_files_left_out"], ["b.yaml"])
 

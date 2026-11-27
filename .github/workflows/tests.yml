@@ -1,5 +1,5 @@
 # Checks the scripts the testers rely on, on every push and pull request.
-# Offline and free: no phone, no model, no secret.
+# Free: no phone, no model, no secret. Offline but for the code-scan job, which fetches Semgrep and the SemSec rules.
 name: Tests
 on:
   push:
@@ -29,3 +29,44 @@ jobs:
         run: |
           for f in $(git ls-files '*.sh'); do bash -n "$f"; done
           shellcheck -S warning $(git ls-files '*.sh')
+
+  code-scan:
+    # The real Semgrep with the real SemSec rules, on a sample with one known flaw.
+    # The unit tests only see stand-ins for Docker: this is what says the engine itself works.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: A sample with a known flaw
+        run: |
+          mkdir -p sample
+          cat > sample/app.py <<'EOF'
+          import sqlite3
+          from flask import Flask, request
+
+          app = Flask(__name__)
+
+
+          @app.route("/user")
+          def user():
+              name = request.args.get("name")
+              db = sqlite3.connect("app.db")
+              rows = db.execute("SELECT * FROM users WHERE name = '" + name + "'").fetchall()
+              return str(rows)
+          EOF
+      - name: Code scan (Semgrep + SemSec)
+        env:
+          TARGET: sample
+        run: bash scripts/security/semgrep_scan.sh
+      - name: The flaw is found
+        run: |
+          cat results/sast/meta.json
+          python3 - <<'EOF'
+          import json
+          found = json.load(open("results/sast/sast.json"))["results"]
+          print("%d findings:" % len(found), sorted({f["check_id"] for f in found}))
+          assert found, "the SQL injection of the sample was not found"
+          EOF
+      - name: Semgrep's console, when the scan failed   # a sample, nothing private in it
+        if: failure()
+        run: cat results/sast/console.log 2>/dev/null | tail -n 80
+

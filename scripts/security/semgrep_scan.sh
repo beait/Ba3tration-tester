@@ -20,16 +20,27 @@ mkdir -p "$work/rules"
 cp "$work/semsec"/*.yaml "$work/rules/" 2>/dev/null
 [ -n "$(ls "$work/rules")" ] || { echo "::error::no rule file found in SemSec"; exit 1; }
 
-# Keep the rule files this Semgrep version accepts; one rejected file must not stop the scan
-docker run --rm -v "$work/rules:/rules:ro" "$IMAGE" sh -c \
-  'for f in /rules/*.yaml; do if semgrep --validate --metrics off --config "$f" >/dev/null 2>&1; then echo "$f"; fi; done' \
-  > "$work/valid.txt" 2>> results/sast/console.log
+# Keep the rule files this Semgrep version accepts; one rejected file must not stop the scan.
+# What Semgrep says about a rule file is about SemSec's public rules, never about the code scanned:
+# it can go to the job log, and it is the only way to see why a file was left out.
+mkdir -p "$work/validate"
+docker run --rm -v "$work/rules:/rules:ro" -v "$work/validate:/validate" "$IMAGE" sh -c '
+  semgrep --version > /validate/version.txt 2>&1
+  for f in /rules/*.yaml; do
+    if semgrep --validate --metrics off --config "$f" > "/validate/$(basename "$f").log" 2>&1; then echo "$f"; fi
+  done' > "$work/valid.txt" 2>> results/sast/console.log
+echo "Semgrep $(tail -n 1 "$work/validate/version.txt" 2>/dev/null || echo "did not start: is Docker running?")"
 configs=(); used=(); skipped=()
 for f in "$work"/rules/*.yaml; do
   name=$(basename "$f")
   if grep -qxF "/rules/$name" "$work/valid.txt"; then configs+=(--config "/rules/$name"); used+=("$name"); else skipped+=("$name"); fi
 done
-[ ${#used[@]} -gt 0 ] || { echo "::error::Semgrep accepted none of the SemSec rule files. Its console is in the encrypted results: results/sast/console.log"; exit 1; }
+for name in ${skipped[@]+"${skipped[@]}"}; do
+  echo "::group::Why Semgrep rejected $name"
+  tail -n 25 "$work/validate/$name.log" 2>/dev/null || echo "(Semgrep wrote nothing)"
+  echo "::endgroup::"
+done
+[ ${#used[@]} -gt 0 ] || { echo "::error::Semgrep accepted none of the SemSec rule files: its reasons are just above"; exit 1; }
 echo "SemSec rule files used: ${used[*]}"
 [ ${#skipped[@]} -eq 0 ] || echo "::warning::SemSec rule files this Semgrep version rejected, left out: ${skipped[*]}"
 
