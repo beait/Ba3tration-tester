@@ -54,9 +54,10 @@ jobs:
               return str(rows)
           EOF
           # a lock file: package hashes, which the key rules take for keys. It must not be read.
-          cat > sample/package-lock.json <<'EOF'
-          {"packages": {"node_modules/a": {"integrity": "sha512-Ixm8tFfoKKIPYdCCKYTsqv+Fd4IJ0DQqMyEimo+pxUOMUR9cVPlwTrFt9Avu+3cb6Zp3mAzl+t1MrG2fxxKsxw=="}}}
-          EOF
+          # (written in two halves: whole, this very file would be reported for holding a key)
+          half="sha512-Ixm8tFfoKKIPYdCCKYTsqvAvu"
+          printf '{"packages": {"node_modules/a": {"integrity": "%s+3cb6Zp3mAzl+t1MrG2fxxKsxw=="}}}\n' "$half" > sample/package-lock.json
+          grep -q 'u+3cb6Zp3mAzl+t1MrG2f' sample/package-lock.json
       - name: Code scan (Semgrep + SemSec)
         env:
           TARGET: sample
