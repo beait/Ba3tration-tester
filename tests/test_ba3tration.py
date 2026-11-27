@@ -292,6 +292,100 @@ class Workflows(unittest.TestCase):
                 self.assertNotIn("zaproxy", other.read_text(encoding="utf-8"), other.name)
 
 
+FAKE_GIT = """#!/usr/bin/env bash
+# Stands in for git: a SemSec checkout with two rule files and the repo's own CI workflow
+if [ "$1" = clone ]; then
+  dir="${@: -1}"; mkdir -p "$dir/.github/workflows"
+  printf 'rules:\\n  - id: a\\n' > "$dir/a.yaml"; printf 'rules:\\n  - id: b\\n' > "$dir/b.yaml"
+  printf 'name: rules\\non: push\\n' > "$dir/.github/workflows/rules.yml"
+else echo 0123456789abcdef0123456789abcdef01234567; fi
+"""
+FAKE_DOCKER = """#!/usr/bin/env bash
+# Stands in for docker run semgrep/semgrep: the validation pass, then the scan
+printf '%s\\n' "$*" >> "$DOCKER_LOG"
+out=""; for a in "$@"; do case "$a" in *:/out) out="${a%:/out}";; esac; done
+case " $* " in
+  *" sh -c "*) for f in $FAKE_VALID; do echo "/rules/$f"; done ;;
+  *" scan "*)
+    echo "finding: semsec.js.sql-injection in /src/api/users.js"   # Semgrep's own console
+    case " $* " in *" p/owasp-top-ten "*) [ -z "${FAKE_PACK_FAILS:-}" ] || exit 2 ;; esac
+    [ "${FAKE_EXIT:-0}" = 0 ] || exit "$FAKE_EXIT"
+    printf '{"results": [{"check_id": "semsec.js.sql-injection"}], "paths": {"scanned": %s}}' "${FAKE_SCANNED:-[\\"a.js\\", \\"b.js\\"]}" > "$out/sast.json" ;;
+esac
+"""
+
+
+@unittest.skipUnless(shutil.which("bash"), "needs bash")
+class CodeScan(unittest.TestCase):
+    """scripts/security/semgrep_scan.sh with stand-ins for git and docker."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        (self.tmp / "bin").mkdir()
+        for name, body in (("git", FAKE_GIT), ("docker", FAKE_DOCKER)):
+            (self.tmp / "bin" / name).write_text(body)
+            (self.tmp / "bin" / name).chmod(0o755)
+        (self.tmp / "work/code").mkdir(parents=True)
+
+    def scan(self, **env):
+        e = dict(os.environ, PATH="%s%s%s" % (self.tmp / "bin", os.pathsep, os.environ["PATH"]),
+                 DOCKER_LOG=str(self.tmp / "docker.log"), FAKE_VALID="a.yaml b.yaml")
+        e.update(env)
+        res = subprocess.run(["bash", str(ROOT / "scripts/security/semgrep_scan.sh")], cwd=self.tmp / "work",
+                             env=e, capture_output=True, text=True)
+        meta = self.tmp / "work/results/sast/meta.json"
+        return res, (json.loads(meta.read_text()) if meta.exists() else None)
+
+    def scans(self):
+        return [line for line in (self.tmp / "docker.log").read_text().splitlines() if " scan " in line]
+
+    def test_a_scan_that_ran(self):
+        res, meta = self.scan()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("SemSec rule files used: a.yaml b.yaml", res.stdout)
+        self.assertIn("2 files read", res.stdout)
+        self.assertEqual((meta["semgrep_exit"], meta["owasp_pack"], meta["files_scanned"]), (0, True, 2))
+        # each rule file by name: never the folder, never the rules repo's own workflow
+        self.assertIn("--config /rules/a.yaml --config /rules/b.yaml --config p/owasp-top-ten", self.scans()[0])
+        self.assertNotIn("rules.yml", (self.tmp / "docker.log").read_text())
+
+    def test_no_finding_in_the_public_log(self):
+        res, _ = self.scan()
+        self.assertNotIn("sql-injection", res.stdout + res.stderr)
+        self.assertIn("sql-injection", (self.tmp / "work/results/sast/console.log").read_text())
+
+    def test_a_scan_that_failed_is_not_a_clean_scan(self):
+        res, meta = self.scan(FAKE_EXIT="7")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("::error::Semgrep stopped with exit 7", res.stdout)
+        self.assertEqual(meta["semgrep_exit"], 7)
+
+    def test_without_the_registry_pack(self):
+        res, meta = self.scan(FAKE_PACK_FAILS="1")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("::warning::Semgrep's OWASP Top 10 pack could not be used", res.stdout)
+        self.assertFalse(meta["owasp_pack"])
+        self.assertNotIn("p/owasp-top-ten", self.scans()[1])
+
+    def test_a_rejected_rule_file_is_left_out_and_named(self):
+        res, meta = self.scan(FAKE_VALID="a.yaml")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("left out: b.yaml", res.stdout)
+        self.assertNotIn("/rules/b.yaml", self.scans()[0])
+        self.assertEqual(meta["rule_files_left_out"], ["b.yaml"])
+
+    def test_no_usable_rule_file(self):
+        res, _ = self.scan(FAKE_VALID="")
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(self.scans(), [])
+
+    def test_nothing_read_is_an_error(self):
+        res, _ = self.scan(FAKE_SCANNED="[]")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("read no file", res.stdout)
+
+
 FAKE_GH = """#!/usr/bin/env bash
 case "$1 $2" in
   "repo view") echo "someone/app" ;;
@@ -334,6 +428,16 @@ class Collect(unittest.TestCase):
         text = (out / "BA3TRATION-REPORT.md").read_text(encoding="utf-8")
         self.assertIn("A05:2025 — Injection (1)", text)
         self.assertIn("`/src/api/users.js:42`", text)
+
+        # Windows: python3 is the Store's stub that runs nothing, the real one is called python
+        (tmp / "bin/python3").write_text("#!/usr/bin/env bash\nexit 9\n")
+        (tmp / "bin/python3").chmod(0o755)
+        os.symlink(sys.executable, tmp / "bin/python")
+        out2 = tmp / "run2"
+        res = subprocess.run(["bash", str(ROOT / "scripts/collect.sh"), "123", str(key), str(out2)],
+                             cwd=tmp, env=env, capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((out2 / "BA3TRATION-REPORT.md").exists(), res.stdout + res.stderr)
 
 
 SKILL = ROOT / "skills/ba3tration-tester/SKILL.md"
