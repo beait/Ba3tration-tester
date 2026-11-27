@@ -21,6 +21,8 @@ on:
       code_repo: { type: string, default: "" }
       ref: { type: string, default: "" }
       code_dir: { type: string, default: "." }
+    secrets:   # what the one-button workflow may hand over, all optional here as in a run of this workflow alone
+      SOURCE_REPO_TOKEN: { required: false }
 
 permissions:
   contents: read
@@ -30,12 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
       - name: Check setup
         id: setup
         run: |
           test -s results_public.pem || { echo "::error::results_public.pem is missing: run ./setup.sh first"; exit 1; }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
         with:
           repository: ${{ inputs.code_repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -49,6 +51,6 @@ jobs:
       - name: Encrypt results
         if: always() && steps.setup.outcome == 'success'   # no key yet = nothing to encrypt with
         run: bash scripts/encrypt_results.sh security-sast
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         if: always() && steps.setup.outcome == 'success'
         with: { name: results-security-sast, path: results.enc/, retention-days: 14 }

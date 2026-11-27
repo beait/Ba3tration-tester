@@ -227,6 +227,25 @@ def dispatch_inputs(text, trigger="workflow_dispatch"):
     return out
 
 
+def run_scripts(text):
+    """The scripts of a workflow's run: steps, one string each (no YAML library: the tests need none)."""
+    lines, out, i = text.splitlines(), [], 0
+    while i < len(lines):
+        m = re.match(r"(\s*)(?:- )?run: (.*)$", lines[i])
+        i += 1
+        if not m:
+            continue
+        if m.group(2).strip() not in ("|", ">", "|-", ">-"):
+            out.append(m.group(2))
+            continue
+        block = []
+        while i < len(lines) and (not lines[i].strip() or len(lines[i]) - len(lines[i].lstrip()) > len(m.group(1))):
+            block.append(lines[i])
+            i += 1
+        out.append("\n".join(block))
+    return out
+
+
 def call_inputs(text):
     """{input: default as text} of a workflow_call written as  name: { type: x, default: y }"""
     block = re.search(r"^  workflow_call:\n    inputs:\n((?:      .*\n)+)", text, re.M).group(1)
@@ -263,13 +282,47 @@ class Workflows(unittest.TestCase):
         text = self.read("ba3tration.yml")
         for engine in ("agent-testers.yml", "security-sast.yml", "security-dast.yml"):
             self.assertIn("uses: ./.github/workflows/%s" % engine, text)
-        self.assertEqual(text.count("secrets: inherit"), 3)
+
+    def test_each_engine_gets_its_secrets_by_name(self):
+        """No `secrets: inherit`: what an engine reads is declared by it and handed over by name, nothing else."""
+        button = self.read("ba3tration.yml")
+        self.assertNotIn("secrets: inherit", button)
+        for engine in ("agent-testers.yml", "security-sast.yml", "security-dast.yml"):
+            text = self.read(engine)
+            read = set(re.findall(r"secrets\.([A-Z][A-Z0-9_]*)", text))
+            call = text[text.index("  workflow_call:"):text.index("\npermissions:")]
+            declared = set(re.findall(r"^      ([A-Z][A-Z0-9_]*): \{ required: false \}$", call, re.M))
+            self.assertEqual(declared, read, engine)
+            job = button[button.index("uses: ./.github/workflows/%s" % engine):].split("\n\n")[0]
+            passed = dict(re.findall(r"^      ([A-Z][A-Z0-9_]*): \$\{\{ secrets\.([A-Z0-9_]+) \}\}$", job, re.M))
+            self.assertEqual(set(passed), read, engine)
+            for name, source in passed.items():
+                self.assertEqual(name, source, engine)
+
+    def test_actions_are_pinned_to_a_commit(self):
+        """A tag can be moved to other code after the fact; a full commit SHA cannot."""
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                m = re.match(r"\s*(?:- )?uses: (\S+)", line)
+                if m and not m.group(1).startswith("./"):
+                    self.assertRegex(m.group(1), r"@[0-9a-f]{40}$", "%s: %s" % (path.name, line.strip()))
+                    self.assertRegex(line, r"#\s*v\d+", "%s: say which version that commit is: %s" % (path.name, line.strip()))
+
+    def test_no_input_is_pasted_into_a_command(self):
+        """${{ inputs.x }} inside run: becomes part of the script: a value with a quote in it runs as a command."""
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            for script in run_scripts(path.read_text(encoding="utf-8")):
+                self.assertNotRegex(script, r"\$\{\{\s*(inputs|github\.event|github\.head_ref|matrix)\.", path.name)
+
+    def test_nothing_fetched_is_piped_into_a_shell(self):
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            self.assertNotRegex(path.read_text(encoding="utf-8"), r"(curl|wget)[^\n|]*\|\s*(sudo\s+)?(ba)?sh\b", path.name)
 
     def test_security_results_leave_the_runner_encrypted_only(self):
         for name, label in (("security-sast.yml", "security-sast"), ("security-dast.yml", "security-dast")):
             text = self.read(name)
             self.assertIn("bash scripts/encrypt_results.sh %s" % label, text)
-            uploads = re.findall(r"uses: actions/upload-artifact@v\d+\n(?:.*\n)*?.*path: ([^,}\n]+)", text)
+            uploads = re.findall(r"uses: actions/upload-artifact@\S+.*\n(?:.*\n)*?.*path: ([^,}\n]+)", text)
             self.assertEqual([u.strip() for u in uploads], ["results.enc/"], name)
             # a repo that has not run the setup has no key: nothing is encrypted or uploaded then
             for step in ("Encrypt results", "uses: actions/upload-artifact"):
@@ -353,6 +406,8 @@ class CodeScan(unittest.TestCase):
         # each rule file by name: never the folder, never the rules repo's own workflow
         self.assertIn("--config /rules/a.yaml --config /rules/b.yaml --config p/owasp-top-ten", self.scans()[0])
         self.assertNotIn("rules.yml", (self.tmp / "docker.log").read_text())
+        # lock files are package hashes, which a rule looking for keys takes for keys
+        self.assertIn("--exclude package-lock.json", self.scans()[0])
 
     def test_no_finding_in_the_public_log(self):
         res, _ = self.scan()
@@ -392,6 +447,60 @@ class CodeScan(unittest.TestCase):
         res, _ = self.scan(FAKE_SCANNED="[]")
         self.assertEqual(res.returncode, 1)
         self.assertIn("read no file", res.stdout)
+
+
+FAKE_MAESTRO_CURL = """#!/usr/bin/env bash
+# Stands in for curl: the release archive is the zip prepared by the test
+printf '%s\n' "$*" >> "$CURL_LOG"
+out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done
+cp "$FAKE_ZIP" "$out"
+"""
+
+
+@unittest.skipUnless(shutil.which("bash") and shutil.which("unzip") and shutil.which("shasum"), "needs bash, unzip and shasum")
+class Maestro(unittest.TestCase):
+    """scripts/install_maestro.sh: one version, from its release, and only the archive expected."""
+
+    def setUp(self):
+        import hashlib
+        import zipfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        (self.tmp / "bin").mkdir()
+        (self.tmp / "bin/curl").write_text(FAKE_MAESTRO_CURL)
+        (self.tmp / "bin/curl").chmod(0o755)
+        with zipfile.ZipFile(self.tmp / "maestro.zip", "w") as z:
+            z.writestr("maestro/bin/maestro", "#!/bin/sh\necho maestro\n")
+            z.writestr("maestro/lib/cli.jar", "jar")
+        self.sha = hashlib.sha256((self.tmp / "maestro.zip").read_bytes()).hexdigest()
+
+    def install(self, sha):
+        env = dict(os.environ, PATH="%s%s%s" % (self.tmp / "bin", os.pathsep, os.environ["PATH"]), HOME=str(self.tmp / "home"),
+                   CURL_LOG=str(self.tmp / "curl.log"), FAKE_ZIP=str(self.tmp / "maestro.zip"),
+                   GITHUB_PATH=str(self.tmp / "path"), MAESTRO_VERSION="2.12.1", MAESTRO_SHA256=sha)
+        (self.tmp / "home").mkdir(exist_ok=True)
+        return subprocess.run(["bash", str(ROOT / "scripts/install_maestro.sh")], env=env, capture_output=True, text=True)
+
+    def test_the_expected_archive_is_installed(self):
+        res = self.install(self.sha)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((self.tmp / "home/.maestro/bin/maestro").exists())
+        self.assertTrue((self.tmp / "home/.maestro/lib/cli.jar").exists())
+        self.assertEqual((self.tmp / "path").read_text().strip(), str(self.tmp / "home/.maestro/bin"))
+        self.assertIn("releases/download/cli-2.12.1/maestro.zip", (self.tmp / "curl.log").read_text())
+
+    def test_another_archive_is_refused(self):
+        res = self.install("0" * 64)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("not the one expected", res.stdout)
+        self.assertFalse((self.tmp / "home/.maestro").exists())
+
+    def test_the_workflows_give_the_version_and_its_hash(self):
+        for name in ("agent-testers.yml", "map-check.yml", "replay-check.yml"):
+            text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            self.assertIn("bash scripts/install_maestro.sh", text, name)
+            self.assertRegex(text, r"MAESTRO_VERSION: [\d.]+", name)
+            self.assertRegex(text, r"MAESTRO_SHA256: [0-9a-f]{64}\b", name)
 
 
 FAKE_GH = """#!/usr/bin/env bash

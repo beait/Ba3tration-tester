@@ -117,6 +117,7 @@ When the run ends, the user decrypts the results in their own terminal:
 
 ```bash
 bash scripts/collect.sh <run id>      # downloads and decrypts into runs/<id>/
+.\collect.ps1 <run id>                # the same on Windows, in PowerShell
 ```
 
 Then read, in `runs/<id>/`:

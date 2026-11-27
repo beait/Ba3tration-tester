@@ -17,8 +17,8 @@ jobs:
           - { python: "3.13", os: ubuntu-latest }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5
         with: { python-version: "${{ matrix.python }}" }
       - name: Unit tests (accessibility check, persona matrix, personas, summary, encrypted results)
         run: python3 -m unittest discover -s tests -v
@@ -35,7 +35,7 @@ jobs:
     # The unit tests only see stand-ins for Docker: this is what says the engine itself works.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
       - name: A sample with a known flaw
         run: |
           mkdir -p sample
@@ -53,6 +53,10 @@ jobs:
               rows = db.execute("SELECT * FROM users WHERE name = '" + name + "'").fetchall()
               return str(rows)
           EOF
+          # a lock file: package hashes, which the key rules take for keys. It must not be read.
+          cat > sample/package-lock.json <<'EOF'
+          {"packages": {"node_modules/a": {"integrity": "sha512-Ixm8tFfoKKIPYdCCKYTsqv+Fd4IJ0DQqMyEimo+pxUOMUR9cVPlwTrFt9Avu+3cb6Zp3mAzl+t1MrG2fxxKsxw=="}}}
+          EOF
       - name: Code scan (Semgrep + SemSec)
         env:
           TARGET: sample
@@ -64,7 +68,8 @@ jobs:
           import json
           found = json.load(open("results/sast/sast.json"))["results"]
           print("%d findings:" % len(found), sorted({f["check_id"] for f in found}))
-          assert found, "the SQL injection of the sample was not found"
+          assert any(f["path"].endswith("app.py") for f in found), "the SQL injection of the sample was not found"
+          assert not any("lock" in f["path"] for f in found), "the lock file was scanned"
           EOF
       - name: Semgrep's console, when the scan failed   # a sample, nothing private in it
         if: failure()

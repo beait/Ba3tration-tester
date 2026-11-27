@@ -30,6 +30,8 @@ gh run watch
 bash scripts/collect.sh <run id>       # decrypts on your machine
 ```
 
+On Windows, in PowerShell: `.\collect.ps1 <run id>` (a plain `bash` there is often the one of WSL, which cannot see `gh`).
+
 `collect.sh` writes, in `runs/<id>/`:
 
 - `SUMMARY.md`: what the testers found, grouped, with screenshots next to it.

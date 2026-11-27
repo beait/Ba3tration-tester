@@ -59,7 +59,14 @@ jobs:
       ios_personas: ${{ inputs.ios_personas }}
       brief: ${{ inputs.brief }}
       model: ${{ inputs.model }}
-    secrets: inherit
+    secrets:   # by name: an engine gets the secrets it reads, not every secret of the repo
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      ARTIFACT_PASSPHRASE: ${{ secrets.ARTIFACT_PASSPHRASE }}
+      BUILD_ARGS: ${{ secrets.BUILD_ARGS }}
+      REPLAY_PARAMS: ${{ secrets.REPLAY_PARAMS }}
+      SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
 
   sast:
     if: contains(fromJSON('["all", "security", "sast"]'), inputs.engines)
@@ -68,7 +75,8 @@ jobs:
       code_repo: ${{ inputs.code_repo }}
       ref: ${{ inputs.code_ref }}
       code_dir: ${{ inputs.code_dir }}
-    secrets: inherit
+    secrets:
+      SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
 
   dast:
     if: contains(fromJSON('["all", "security", "dast"]'), inputs.engines)
@@ -77,4 +85,5 @@ jobs:
       scan_type: ${{ inputs.dast_scan }}
       i_am_authorized: ${{ inputs.i_am_authorized }}
       skip_if_unconfigured: ${{ inputs.engines == 'all' || inputs.engines == 'security' }}
-    secrets: inherit
+    secrets:
+      STAGING_URL: ${{ secrets.STAGING_URL }}

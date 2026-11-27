@@ -117,6 +117,14 @@ on:
       replay_traces: { type: string, default: "" }
       replay_times: { type: number, default: 20 }
       repair: { type: string, default: "" }
+    secrets:   # what the one-button workflow may hand over, all optional here as in a run of this workflow alone
+      ANTHROPIC_API_KEY: { required: false }
+      CLAUDE_CODE_OAUTH_TOKEN: { required: false }
+      LLM_API_KEY: { required: false }
+      ARTIFACT_PASSPHRASE: { required: false }
+      BUILD_ARGS: { required: false }
+      REPLAY_PARAMS: { required: false }
+      SOURCE_REPO_TOKEN: { required: false }
 
 permissions:
   contents: read
@@ -131,7 +139,7 @@ jobs:
       ios: ${{ steps.m.outputs.ios }}
       web: ${{ steps.m.outputs.web }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
       - name: Check setup
         run: |
           test -s results_public.pem || { echo "::error::results_public.pem is missing: run ./setup.sh first"; exit 1; }
@@ -156,8 +164,8 @@ jobs:
       app_commit: ${{ steps.app_source.outputs.commit || github.sha }}
       apk_sha256: ${{ steps.built.outputs.apk_sha256 }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
         id: app_source
         if: inputs.source_repo != ''
         with:
@@ -166,13 +174,13 @@ jobs:
           token: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}   # the secret only for a private app repo
           path: src
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4
         with: { node-version: 20 }
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3   # v4
         with: { distribution: temurin, java-version: "17" }
-      - uses: gradle/actions/setup-gradle@v4   # Gradle cache between runs
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a   # v4, Gradle cache between runs
         with: { cache-read-only: false }
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830   # v4
         with:
           path: ~/.npm
           key: npm-android-${{ hashFiles('**/package-lock.json') }}
@@ -180,11 +188,12 @@ jobs:
       - name: Build APK (any framework, log kept private)
         env:
           APP_DIR: ${{ inputs.source_repo != '' && format('src/{0}', inputs.app_dir) || inputs.app_dir }}
+          FRAMEWORK: ${{ inputs.framework }}   # through the environment: a value pasted into the command line could run as a command
           BUILD_COMMAND: ${{ inputs.android_build }}
           BUILD_ARGS: ${{ inputs.build_args }}
           BUILD_ARGS_SECRET: ${{ secrets.BUILD_ARGS }}
           ARTIFACT: ${{ inputs.apk_path }}
-        run: bash scripts/build/android.sh "$APP_DIR" "${{ inputs.framework }}"
+        run: bash scripts/build/android.sh "$APP_DIR" "$FRAMEWORK"
       # Public: which source was built and the hash of the APK, nothing from inside it
       - name: What was built
         id: built
@@ -199,12 +208,12 @@ jobs:
       - name: Encrypt APK
         env: { ARTIFACT_PASSPHRASE: "${{ secrets.ARTIFACT_PASSPHRASE }}" }
         run: mkdir -p out && openssl enc -aes-256-cbc -pbkdf2 -salt -in app.apk -out out/app.apk.enc -pass env:ARTIFACT_PASSPHRASE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         with: { name: app-android, path: out/, retention-days: 3 }
       - name: Encrypt build log
         if: always()
         run: bash scripts/encrypt_results.sh build-log-android
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         if: always()
         with: { name: build-log-android, path: results.enc/, retention-days: 7 }
 
@@ -214,8 +223,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
         if: inputs.source_repo != ''
         with:
           repository: ${{ inputs.source_repo }}
@@ -223,13 +232,13 @@ jobs:
           token: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}   # the secret only for a private app repo
           path: src
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4
         with: { node-version: 20 }
-      - uses: actions/setup-java@v4   # Kotlin Multiplatform builds call Gradle from Xcode
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3   # v4, Kotlin Multiplatform builds call Gradle from Xcode
         with: { distribution: temurin, java-version: "17" }
       - name: Latest Xcode
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830   # v4
         with:
           path: |
             ~/.npm
@@ -239,21 +248,22 @@ jobs:
       - name: Build Simulator .app (any framework, arm64, unsigned, log kept private)
         env:
           APP_DIR: ${{ inputs.source_repo != '' && format('src/{0}', inputs.app_dir) || inputs.app_dir }}
+          FRAMEWORK: ${{ inputs.framework }}   # through the environment: a value pasted into the command line could run as a command
           BUILD_COMMAND: ${{ inputs.ios_build }}
           BUILD_ARGS: ${{ inputs.build_args }}
           BUILD_ARGS_SECRET: ${{ secrets.BUILD_ARGS }}
           ARTIFACT: ${{ inputs.ios_app_path }}
           IOS_SCHEME: ${{ vars.IOS_SCHEME }}   # optional repo variable, for projects with several schemes
-        run: bash scripts/build/ios.sh "$APP_DIR" "${{ inputs.framework }}"
+        run: bash scripts/build/ios.sh "$APP_DIR" "$FRAMEWORK"
       - name: Encrypt .app
         env: { ARTIFACT_PASSPHRASE: "${{ secrets.ARTIFACT_PASSPHRASE }}" }
         run: mkdir -p out && openssl enc -aes-256-cbc -pbkdf2 -salt -in app-ios.tgz -out out/app-ios.tgz.enc -pass env:ARTIFACT_PASSPHRASE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         with: { name: app-ios, path: out/, retention-days: 3 }
       - name: Encrypt build log
         if: always()
         run: bash scripts/encrypt_results.sh build-log-ios
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         if: always()
         with: { name: build-log-ios, path: results.enc/, retention-days: 7 }
 
@@ -267,8 +277,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.android) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4
         with: { name: app-android }
       - name: Decrypt APK
         env: { ARTIFACT_PASSPHRASE: "${{ secrets.ARTIFACT_PASSPHRASE }}" }
@@ -310,22 +320,21 @@ jobs:
       # in a folder several times (replay_traces, scripts/replay_set.py). Both are pinned.
       - name: Explore-Compile-Replay (replay_path, replay_traces)
         if: inputs.replay_path || inputs.replay_traces != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
         with:
           repository: pierridotite/explore-compile-replay
           ref: f89aa1343119a0b95d95a9342e558b2d6db847ec
           path: .ecr
           persist-credentials: false
       - if: inputs.replay_path || inputs.replay_traces != ''
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4
         with: { node-version: 22 }
       - name: Maestro (replay_path, replay_traces)
         if: inputs.replay_path || inputs.replay_traces != ''
-        env: { MAESTRO_VERSION: 2.12.1 }
+        env: { MAESTRO_VERSION: 2.12.1, MAESTRO_SHA256: 54dbb0716425626604973cbb374c585ca30272375d9ce15177a1152765ddd9d7 }   # the SHA-256 of that release's maestro.zip
         run: |
           npm install -g --silent pnpm@10 && (cd .ecr && pnpm install --frozen-lockfile --silent)
-          curl -fsSL "https://get.maestro.mobile.dev" | bash >/dev/null
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          bash scripts/install_maestro.sh
       # The last replay of each trace runs in this group: its processes reach the phone
       # through the loopback, and nothing else (scripts/replay_set.py checks it first).
       - name: A group with no internet (replay_traces)
@@ -336,7 +345,7 @@ jobs:
           sudo ip6tables -I OUTPUT -m owner --gid-owner noinet ! -o lo -j REJECT
 
       - name: Emulator + agent
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d   # v2
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ (inputs.replay_traces == '' || inputs.repair != '') && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           ANTHROPIC_API_KEY: ${{ (inputs.replay_traces == '' || inputs.repair != '') && secrets.ANTHROPIC_API_KEY || '' }}
@@ -379,12 +388,13 @@ jobs:
       # Counts, durations, hashes and step ids only: no text of the app, no typed text
       - name: Replays, public (replay_traces)
         if: always() && inputs.replay_traces != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         with: { name: "replays-${{ matrix.persona }}", path: "results/${{ matrix.persona }}/replays.json", if-no-files-found: ignore, retention-days: 90 }
       - name: Encrypt results
         if: always()
-        run: bash scripts/encrypt_results.sh "${{ matrix.persona }}"
-      - uses: actions/upload-artifact@v4
+        env: { PERSONA: "${{ matrix.persona }}" }
+        run: bash scripts/encrypt_results.sh "$PERSONA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         if: always()
         with: { name: "results-${{ matrix.persona }}", path: results.enc/, retention-days: 14 }
 
@@ -398,8 +408,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.ios) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4
         with: { name: app-ios }
       - name: Decrypt .app
         env: { ARTIFACT_PASSPHRASE: "${{ secrets.ARTIFACT_PASSPHRASE }}" }
@@ -482,8 +492,9 @@ jobs:
 
       - name: Encrypt results
         if: always()
-        run: bash scripts/encrypt_results.sh "${{ matrix.persona }}"
-      - uses: actions/upload-artifact@v4
+        env: { PERSONA: "${{ matrix.persona }}" }
+        run: bash scripts/encrypt_results.sh "$PERSONA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         if: always()
         with: { name: "results-${{ matrix.persona }}", path: results.enc/, retention-days: 14 }
 
@@ -498,7 +509,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.web) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
       - name: Tools (Playwright with WebKit and Chromium, Claude Code)
         run: |
           python3 -m pip install -q playwright==1.58.0 pillow
@@ -548,7 +559,8 @@ jobs:
 
       - name: Encrypt results
         if: always()
-        run: bash scripts/encrypt_results.sh "${{ matrix.persona }}"
-      - uses: actions/upload-artifact@v4
+        env: { PERSONA: "${{ matrix.persona }}" }
+        run: bash scripts/encrypt_results.sh "$PERSONA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         if: always()
         with: { name: "results-${{ matrix.persona }}", path: results.enc/, retention-days: 14 }

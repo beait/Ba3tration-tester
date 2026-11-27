@@ -10,6 +10,9 @@ Additions of this repository on top of mobile-agent-testers (the sections below 
 - **One report**: `collect.sh` writes `BA3TRATION-REPORT.md` when the run has security results: findings by OWASP Top 10:2025 category, then the testers' summary. Security findings are encrypted like the testers' reports.
 - **Skill for any coding agent**: `skills/ba3tration-tester/SKILL.md`, installed by `scripts/install_skill.sh`; the plugin carries the same skill.
 - **Nothing runs on a push** except the unit tests: the dashboard demo site is published by hand only, and the template ships no `results_public.pem` (run the setup first).
+- **Fixes from the first real runs**: the code scan gives Semgrep the SemSec rule files one by one, fails when Semgrep fails or reads no file, says why a rule file was left out, and skips lock files (their package hashes were reported as keys). The tests run the real Semgrep on a sample with a known flaw.
+- **The tool's own findings, fixed**: actions pinned to a commit, each engine gets its secrets by name instead of `secrets: inherit`, no input pasted into a command line, and Maestro installed from its release after a SHA-256 check instead of `curl | bash`.
+- **Windows**: `.\collect.ps1 <run id>` runs the collect step with the bash of Git for Windows, and `collect.sh` finds Python under the names Windows gives it.
 
 ## Unreleased
 

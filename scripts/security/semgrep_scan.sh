@@ -45,10 +45,16 @@ done
 echo "SemSec rule files used: ${used[*]}"
 [ ${#skipped[@]} -eq 0 ] || echo "::warning::SemSec rule files this Semgrep version rejected, left out: ${skipped[*]}"
 
+# Lock files are lists of package hashes: to a rule that looks for keys, every hash is one. Not scanned.
+skip=()
+for lock in package-lock.json npm-shrinkwrap.json yarn.lock pnpm-lock.yaml bun.lock composer.lock Gemfile.lock \
+            Cargo.lock poetry.lock uv.lock Pipfile.lock go.sum Podfile.lock pubspec.lock gradle.lockfile packages.lock.json; do
+  skip+=(--exclude "$lock")
+done
 scan() {   # scan <extra config arguments...>
   rm -f results/sast/sast.json
   docker run --rm -v "$(cd "$TARGET" && pwd):/src:ro" -v "$work/rules:/rules:ro" -v "$PWD/results/sast:/out" \
-    "$IMAGE" semgrep scan "${configs[@]}" "$@" --metrics off --quiet --json --output /out/sast.json /src \
+    "$IMAGE" semgrep scan "${configs[@]}" "$@" "${skip[@]}" --metrics off --quiet --json --output /out/sast.json /src \
     >> results/sast/console.log 2>&1
 }
 pack=true

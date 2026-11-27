@@ -14,8 +14,8 @@ jobs:
     outputs:
       pages: ${{ steps.pages.outputs.on }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5
         with: { python-version: "3.13" }
       - run: python3 scripts/dashboard.py --demo --export site/
       - name: Is GitHub Pages on
@@ -27,7 +27,7 @@ jobs:
           else
             echo "::notice::GitHub Pages is off. Turn it on in Settings > Pages > Source: GitHub Actions, then run this workflow again."
           fi
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa   # v3
         if: steps.pages.outputs.on == 'true'
         with: { path: site }
   # A job of its own, as in GitHub's starter workflow: the artifact is listed once the build job ends.
@@ -38,4 +38,4 @@ jobs:
     environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e   # v4

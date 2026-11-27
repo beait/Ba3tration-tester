@@ -27,7 +27,7 @@ gh workflow run ba3tration.yml                                             # ا�
 gh workflow run ba3tration.yml -f engines=security -f code_repo=owner/app  # الأمان فقط، على كود تطبيقك
 gh workflow run ba3tration.yml -f engines=functional                       # المختبِرون فقط
 gh run watch
-bash scripts/collect.sh <run id>
+.\collect.ps1 <run id>             # على ويندوز. على ماك ولينكس: bash scripts/collect.sh <run id>
 ```
 
 `collect.sh` يفك التشفير على جهازك ويكتب في `runs/<id>/`:
