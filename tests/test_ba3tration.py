@@ -271,6 +271,10 @@ class Workflows(unittest.TestCase):
             self.assertIn("bash scripts/encrypt_results.sh %s" % label, text)
             uploads = re.findall(r"uses: actions/upload-artifact@v\d+\n(?:.*\n)*?.*path: ([^,}\n]+)", text)
             self.assertEqual([u.strip() for u in uploads], ["results.enc/"], name)
+            # a repo that has not run the setup has no key: nothing is encrypted or uploaded then
+            for step in ("Encrypt results", "uses: actions/upload-artifact"):
+                condition = text[text.index(step):].split("if: ", 1)[1].splitlines()[0]
+                self.assertIn("always() && steps.", condition, "%s: %s" % (name, step))
 
     def test_scanners_print_nothing_to_the_public_log(self):
         zap = (ROOT / "scripts/security/zap_scan.sh").read_text()

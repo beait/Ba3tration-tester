@@ -32,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check setup
+        id: setup
         run: |
           test -s results_public.pem || { echo "::error::results_public.pem is missing: run ./setup.sh first"; exit 1; }
       - uses: actions/checkout@v4
@@ -46,8 +47,8 @@ jobs:
           TARGET: code/${{ inputs.code_dir }}
         run: bash scripts/security/semgrep_scan.sh
       - name: Encrypt results
-        if: always()
+        if: always() && steps.setup.outcome == 'success'   # no key yet = nothing to encrypt with
         run: bash scripts/encrypt_results.sh security-sast
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.setup.outcome == 'success'
         with: { name: results-security-sast, path: results.enc/, retention-days: 14 }
